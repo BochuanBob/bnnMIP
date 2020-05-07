@@ -5,9 +5,9 @@ export readNN
 
 # Read the information of the neural network and store it in desired format.
 function readNN(fileName::String, nnName::String)
-    file = matopen(fileName);
-    nnPre = read(file, nnName);
-    close(file);
-    nn = preprocNN(nnPre);
+    file = matopen(fileName)
+    nnPre = read(file, nnName)
+    close(file)
+    nn = preprocNN(nnPre)
     return nn
 end

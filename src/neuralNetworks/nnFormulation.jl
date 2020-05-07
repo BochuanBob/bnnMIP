@@ -5,4 +5,5 @@ export nnFormulation!
 function nnFormulation!(model::JuMP.Model, nn, x::VarOrAff,
     y::VarOrAff; ideal=true)
     # TODO: Build the MIP formulation.
+    return nothing
 end
