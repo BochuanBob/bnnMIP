@@ -3,6 +3,7 @@ export denseBin
 
 # A fully connected layer with sign() or
 # without activation function.
+# Each entry of weights must be -1, 0, 1.
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
                takeSign=false, cuts=true) where {T<:Real, U<:Real}
@@ -16,11 +17,11 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     if (length(bias) != yLen)
         error("The sizes of weights and bias don't match!")
     end
-    y = @variable(m, [1:yLen], lower_bound=-1, upper_bound=1,
+    y = @variable(m, [1:yLen],
                 base_name="y_$count")
     if (takeSign)
         for i in 1:yLen
-            neuronSign!(m, x, y[i], i, weights[i, :], bias[i], cuts=cuts)
+            neuronSign!(m, x, y[i], weights[i, :], bias[i], cuts=cuts)
         end
     else
         @constraint(m, [i=1:yLen], y[i] ==
@@ -42,41 +43,102 @@ end
 # A MIP formulation for a single neuron.
 # If cuts == false, it is a Big-M formulation.
 # Otherwise, cuts for the ideal formulation are added to the model.
-# index is only used to name the variable.
-function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff, index::Int64,
+function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 weightVec::Array{T, 1}, b::U;
                 cuts=False) where {T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
+    if (nonzeroNum == 0)
+        @constraint(m, yi == 1)
+        return nothing
+    end
     tau, kappa = getTauAndKappa(nonzeroNum, b)
     Iset1 = union(oneIndices, negOneIndices)
-    addBNNCutCons!(m, x, yi, Iset1, oneIndices, negOneIndices, tau, kappa)
+    @constraint(m,
+        getBNNCutFirstCon(x, yi, Iset1, oneIndices, negOneIndices, tau))
+    @constraint(m,
+        getBNNCutSecondCon(x, yi, Iset1, oneIndices, negOneIndices, kappa))
     Iset2 = Array{Int64, 1}([])
-    addBNNCutCons!(m, x, yi, Iset2, oneIndices, negOneIndices, tau, kappa)
-    # TODO: Implement the callback function and cuts.
+    @constraint(m,
+        getBNNCutFirstCon(x, yi, Iset2, oneIndices, negOneIndices, tau))
+    @constraint(m,
+        getBNNCutSecondCon(x, yi, Iset2, oneIndices, negOneIndices, kappa))
+    # Generate cuts by callback function
+    function callbackCutsBNN(cb_data)
+        xVal = callback_value(cb_data, x)
+        yVal = callback_value(cb_data, yi)
+        I1, I2 = getCutsIndices(xVal, yVal,oneIndices,negOneIndices)
+        con1 = @build_constraint(
+            getBNNCutFirstCon(x, yi, I1, oneIndices, negOneIndices, tau))
+        con1 = @build_constraint(
+            getBNNCutSecondCon(x, yi, I2, oneIndices, negOneIndices, kappa))
+        MOI.submit(m, MOI.UserCut(cb_data), con1)
+        MOI.submit(m, MOI.UserCut(cb_data), con2)
+    end
+    MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
+
     return nothing
 end
 
-# Add two constraint with given I, I^+, I^-, tau, kappa as shown
+# Output the I^1 and I^2 for two constraints in Proposition 3
+function getCutsIndices(xVal::Array{T, 1}, yVal::U,
+                        oneIndices::Array{Int64, 1},
+                        negOneIndices::Array{Int64, 1})
+                        where {T<:Real, U<:Real}
+    xLen = length(xVal)
+    I1 = Array{Int64, 1}([])
+    I2 = Array{Int64, 1}([])
+    for i in oneIndices
+        if (xVal[i] < yVal)
+            append!(I1, i)
+        elseif (xVal[i] > yVal)
+            append!(I2, i)
+        end
+    end
+
+    for i in negOneIndices
+        if (-xVal[i] < yVal)
+            append!(I1, i)
+        elseif (-xVal[i] > yVal)
+            append!(I2, i)
+        end
+    end
+
+    return I1, I2
+end
+
+# Return first constraint with given I, I^+, I^-, tau, kappa as shown
 # in Proposition 3.
-function addBNNCutCons!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
+function getBNNCutFirstCon(x::VarOrAff, yi::VarOrAff,
                             Iset::Array{Int64, 1},
                             oneIndices::Array{Int64, 1},
                             negOneIndices::Array{Int64, 1},
-                            tau::Int64, kappa::In64)
+                            tau::Int64)
     Ipos = intersect(Iset, oneIndices)
     Ineg = intersect(Iset, negOneIndices)
     lenI = length(Iset)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
-    @constraint(m, sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) >=
+    return sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) >=
                 ((lenI - nonzeroNum - tau) * (1 + yi) /2) -
-                (1 - yi) * lenI/2)
-    @constraint(m, sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) <=
+                (1 - yi) * lenI/2
+end
+
+# Return second constraint with given I, I^+, I^-, tau, kappa as shown
+# in Proposition 3.
+function addBNNCutSecondCon(x::VarOrAff, yi::VarOrAff,
+                            Iset::Array{Int64, 1},
+                            oneIndices::Array{Int64, 1},
+                            negOneIndices::Array{Int64, 1},
+                            kappa::In64)
+    Ipos = intersect(Iset, oneIndices)
+    Ineg = intersect(Iset, negOneIndices)
+    lenI = length(Iset)
+    nonzeroNum = length(oneIndices) + length(negOneIndices)
+    return sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) <=
                 ((1 + yi) * lenI/2) -
-                (lenI - nonzeroNum + kappa) * (1 - yi) /2)
-    return nothing
+                (lenI - nonzeroNum + kappa) * (1 - yi) /2
 end
 
 # When w^T x + kappa <= 0, sign(w^T x + b) = -1.
