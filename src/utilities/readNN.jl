@@ -8,6 +8,7 @@ function readNN(fileName::String, nnName::String)
     file = matopen(fileName)
     nnPre = read(file, nnName)
     close(file)
+    @assert haskey(nnPre[1], "inputSize")
     nn = preprocNN(nnPre)
     return nn
 end

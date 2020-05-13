@@ -16,16 +16,18 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
             xOut = activation1D(m, xIn, nn[i]["function"],
                     upper = nn[i]["upper"], lower = nn[i]["lower"])
         elseif (nn[i]["type"] == "denseBin")
+            takeSign = false
             if (haskey(nn[i], "activation"))
                 takeSign = (nn[i]["activation"] == "Sign")
-            else
-                takeSign = false
             end
+            println(takeSign)
             xOut = denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
                             takeSign=takeSign, cuts=cuts)
+        else
+            error("Not support layer.")
         end
         xIn = xOut
     end
-    y = @variable(m, [1:length(xIn)], base_name="y_$count")
+    y = xOut
     return y
 end

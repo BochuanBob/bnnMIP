@@ -6,7 +6,7 @@ export denseBin
 # Each entry of weights must be -1, 0, 1.
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
-               takeSign=false, cuts=true) where {T<:Real, U<:Real}
+               takeSign=false, cuts=true) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -34,7 +34,7 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
 end
 
 # Checking each entry of weights must be in -1, 0, 1.
-function checkWeights(weights::Array{T, 2}) where {T <: Real}
+function checkWeights(weights::Array{T, 2}) where{T <: Real}
     for weight in weights
         if (~(weight in [-1, 0, 1]))
             return false
@@ -48,7 +48,7 @@ end
 # Otherwise, cuts for the ideal formulation are added to the model.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 weightVec::Array{T, 1}, b::U;
-                cuts=False) where {T<:Real, U<:Real}
+                cuts=False) where{T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
@@ -59,37 +59,37 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     end
     tau, kappa = getTauAndKappa(nonzeroNum, b)
     Iset1 = union(oneIndices, negOneIndices)
-    @constraint(m,
-        getBNNCutFirstCon(x, yi, Iset1, oneIndices, negOneIndices, tau))
-    @constraint(m,
-        getBNNCutSecondCon(x, yi, Iset1, oneIndices, negOneIndices, kappa))
+    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
+                oneIndices, negOneIndices, tau)>=0)
+    @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset1,
+                oneIndices, negOneIndices, kappa)<=0)
     Iset2 = Array{Int64, 1}([])
-    @constraint(m,
-        getBNNCutFirstCon(x, yi, Iset2, oneIndices, negOneIndices, tau))
-    @constraint(m,
-        getBNNCutSecondCon(x, yi, Iset2, oneIndices, negOneIndices, kappa))
-    # Generate cuts by callback function
-    function callbackCutsBNN(cb_data)
-        xVal = callback_value(cb_data, x)
-        yVal = callback_value(cb_data, yi)
-        I1, I2 = getCutsIndices(xVal, yVal,oneIndices,negOneIndices)
-        con1 = @build_constraint(
-            getBNNCutFirstCon(x, yi, I1, oneIndices, negOneIndices, tau))
-        con1 = @build_constraint(
-            getBNNCutSecondCon(x, yi, I2, oneIndices, negOneIndices, kappa))
-        MOI.submit(m, MOI.UserCut(cb_data), con1)
-        MOI.submit(m, MOI.UserCut(cb_data), con2)
+    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
+                    oneIndices, negOneIndices, tau)>=0)
+    @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset2,
+                    oneIndices, negOneIndices, kappa)<=0)
+    if (cuts)
+        # Generate cuts by callback function
+        function callbackCutsBNN(cb_data)
+            xVal = callback_value(cb_data, x)
+            yVal = callback_value(cb_data, yi)
+            I1, I2 = getCutsIndices(xVal, yVal,oneIndices,negOneIndices)
+            con1 = @build_constraint(getBNNCutFirstConGE(m, x, yi, I1,
+                            oneIndices, negOneIndices, tau)>=0)
+            con2 = @build_constraint(getBNNCutSecondConLE(m, x, yi, I2,
+                            oneIndices, negOneIndices, kappa) <= 0)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+        end
+        MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     end
-    MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
-
     return nothing
 end
 
 # Output the I^1 and I^2 for two constraints in Proposition 3
 function getCutsIndices(xVal::Array{T, 1}, yVal::U,
                         oneIndices::Array{Int64, 1},
-                        negOneIndices::Array{Int64, 1})
-                        where {T<:Real, U<:Real}
+                        negOneIndices::Array{Int64, 1}) where {T<:Real, U<:Real}
     xLen = length(xVal)
     I1 = Array{Int64, 1}([])
     I2 = Array{Int64, 1}([])
@@ -114,7 +114,8 @@ end
 
 # Return first constraint with given I, I^+, I^-, tau, kappa as shown
 # in Proposition 3.
-function getBNNCutFirstCon(x::VarOrAff, yi::VarOrAff,
+function getBNNCutFirstConGE(m::JuMP.Model,
+                            x::VarOrAff, yi::VarOrAff,
                             Iset::Array{Int64, 1},
                             oneIndices::Array{Int64, 1},
                             negOneIndices::Array{Int64, 1},
@@ -123,25 +124,26 @@ function getBNNCutFirstCon(x::VarOrAff, yi::VarOrAff,
     Ineg = intersect(Iset, negOneIndices)
     lenI = length(Iset)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
-    return sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) >=
+    return @expression(m, sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) -(
                 ((lenI - nonzeroNum - tau) * (1 + yi) /2) -
-                (1 - yi) * lenI/2
+                (1 - yi) * lenI/2 ) )
 end
 
 # Return second constraint with given I, I^+, I^-, tau, kappa as shown
 # in Proposition 3.
-function addBNNCutSecondCon(x::VarOrAff, yi::VarOrAff,
+function getBNNCutSecondConLE(m::JuMP.Model,
+                            x::VarOrAff, yi::VarOrAff,
                             Iset::Array{Int64, 1},
                             oneIndices::Array{Int64, 1},
                             negOneIndices::Array{Int64, 1},
-                            kappa::In64)
+                            kappa::Int64)
     Ipos = intersect(Iset, oneIndices)
     Ineg = intersect(Iset, negOneIndices)
     lenI = length(Iset)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
-    return sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) <=
-                ((1 + yi) * lenI/2) -
-                (lenI - nonzeroNum + kappa) * (1 - yi) /2
+    return @expression(m, sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) -
+                ( ((1 + yi) * lenI/2) -
+                (lenI - nonzeroNum + kappa) * (1 - yi) /2 ) )
 end
 
 # When w^T x + kappa <= 0, sign(w^T x + b) = -1.
@@ -183,7 +185,7 @@ end
 
 # Get tau and kappa when b is a real number but not an integer.
 # Return: tau, kappa.
-function getTauAndKappaFloat64(nonzeroNum::Int64, b::Float64)
+function getTauAndKappaFloat(nonzeroNum::Int64, b::Float64)
     tau = Inf
     kappa = Inf
     if (floor(b) == ceil(b))
