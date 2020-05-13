@@ -8,8 +8,11 @@ nn = readNN("nn.mat", "nn")
 testImages = readFromMAT("data.mat", "test_images")
 testLabels = readFromMAT("data.mat", "test_labels")
 inputSize = nn[1]["inputSize"]
-# TODO: create a variable x with the same size as inputSize
-# x = @variable(m, ...)
+@assert inputSize isa NTuple{N, Int} where {N}
+x = Array{VariableRef}(undef, inputSize)
+for idx in eachindex(x)
+    x[idx] = @variable(m)
+end
 @constraint(m, x .== testImages[1, :, :, :])
 y = getBNNoutput(m, nn, x)
 @objective(m, Min, 0)
