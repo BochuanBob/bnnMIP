@@ -1,5 +1,6 @@
 using JuMP
-const VarOrAff = Union{JuMP.VariableRef,JuMP.AffExpr}
+const VarOrAff = Union{JuMP.VariableRef,JuMP.AffExpr,
+                        Array{VariableRef}, Array{AffExpr}}
 
 mutable struct nnData
     count::Int

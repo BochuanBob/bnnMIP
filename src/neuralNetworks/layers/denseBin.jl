@@ -17,13 +17,16 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     if (length(bias) != yLen)
         error("The sizes of weights and bias don't match!")
     end
-    y = @variable(m, [1:yLen],
-                base_name="y_$count")
+    y = nothing
     if (takeSign)
+        y = @variable(m, [1:yLen], binary=true,
+                    base_name="y_$count")
         for i in 1:yLen
             neuronSign!(m, x, y[i], weights[i, :], bias[i], cuts=cuts)
         end
     else
+        y = @variable(m, [1:yLen],
+                    base_name="y_$count")
         @constraint(m, [i=1:yLen], y[i] ==
                     bias[i] + sum(weights[i,j] * x[j] for j in 1:xLen))
     end
