@@ -4,9 +4,11 @@ export denseBin
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
+# xOnes: xOne is true if each entry of input is either -1 or 1.
+# False otherwise.
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
-               takeSign=false, cuts=true) where{T<:Real, U<:Real}
+               takeSign=false, cuts=true, xOnes=true) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -19,10 +21,14 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     end
     y = nothing
     if (takeSign)
-        y = @variable(m, [1:yLen], binary=true,
+        y = @variable(m, [1:yLen],
                     base_name="y_$count")
+        z = @variable(m, [1:yLen], binary=true,
+                    base_name="z_$count")
+        @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
         for i in 1:yLen
-            neuronSign!(m, x, y[i], weights[i, :], bias[i], cuts=cuts)
+            neuronSign!(m, x, y[i], weights[i, :], bias[i], cuts=cuts,
+                        xOnes=xOnes)
         end
     else
         y = @variable(m, [1:yLen],
@@ -48,7 +54,7 @@ end
 # Otherwise, cuts for the ideal formulation are added to the model.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 weightVec::Array{T, 1}, b::U;
-                cuts=False) where{T<:Real, U<:Real}
+                cuts=false, xOnes=true) where{T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
@@ -57,7 +63,11 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         @constraint(m, yi == 1)
         return nothing
     end
-    tau, kappa = getTauAndKappa(nonzeroNum, b)
+    tau = b
+    kappa = b
+    if (xOnes)
+        tau, kappa = getTauAndKappa(nonzeroNum, b)
+    end
     Iset1 = union(oneIndices, negOneIndices)
     @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
                 oneIndices, negOneIndices, tau)>=0)
@@ -119,14 +129,14 @@ function getBNNCutFirstConGE(m::JuMP.Model,
                             Iset::Array{Int64, 1},
                             oneIndices::Array{Int64, 1},
                             negOneIndices::Array{Int64, 1},
-                            tau::Int64)
+                            tau::T) where {T <: Real}
     Ipos = intersect(Iset, oneIndices)
     Ineg = intersect(Iset, negOneIndices)
     lenI = length(Iset)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
-    return @expression(m, sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) -(
-                ((lenI - nonzeroNum - tau) * (1 + yi) /2) -
-                (1 - yi) * lenI/2 ) )
+    expr = @expression(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
+                    -(((lenI - nonzeroNum - tau) * (1 + yi) /2) - (1 - yi) * lenI/2 ) )
+    return expr
 end
 
 # Return second constraint with given I, I^+, I^-, tau, kappa as shown
@@ -136,14 +146,14 @@ function getBNNCutSecondConLE(m::JuMP.Model,
                             Iset::Array{Int64, 1},
                             oneIndices::Array{Int64, 1},
                             negOneIndices::Array{Int64, 1},
-                            kappa::Int64)
+                            kappa::T) where {T <: Real}
     Ipos = intersect(Iset, oneIndices)
     Ineg = intersect(Iset, negOneIndices)
     lenI = length(Iset)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
-    return @expression(m, sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg) -
-                ( ((1 + yi) * lenI/2) -
-                (lenI - nonzeroNum + kappa) * (1 - yi) /2 ) )
+    expr = @expression(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg)) -
+                ( ((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2))
+    return expr
 end
 
 # When w^T x + kappa <= 0, sign(w^T x + b) = -1.
@@ -191,7 +201,7 @@ function getTauAndKappaFloat(nonzeroNum::Int64, b::Float64)
     if (floor(b) == ceil(b))
         error("b can not be an integer!")
     end
-    if (mod(b, 2) == 0)
+    if (mod(floor(b), 2) == 0)
         if(mod(nonzeroNum, 2) == 0)
             tau = floor(b)
             kappa = ceil(b) + 1

@@ -9,6 +9,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
     nnLen = length(nn)
     xIn = x
     xOut = nothing
+    xOnes = false
     for i in 1:nnLen
         if (nn[i]["type"] == "flatten")
             xOut = flatten(m, xIn)
@@ -20,9 +21,11 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
             if (haskey(nn[i], "activation"))
                 takeSign = (nn[i]["activation"] == "Sign")
             end
-            println(takeSign)
+            # After the first sign() function, the input of each binary layer
+            # has entries of -1 and 1.
+            xOnes = xOnes || takeSign
             xOut = denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
-                            takeSign=takeSign, cuts=cuts)
+                            takeSign=takeSign, cuts=cuts, xOnes=xOnes)
         else
             error("Not support layer.")
         end
