@@ -17,15 +17,21 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
             xOut = activation1D(m, xIn, nn[i]["function"],
                     upper = nn[i]["upper"], lower = nn[i]["lower"])
         elseif (nn[i]["type"] == "denseBin")
-            takeSign = false
             if (haskey(nn[i], "activation"))
                 takeSign = (nn[i]["activation"] == "Sign")
             end
             # After the first sign() function, the input of each binary layer
             # has entries of -1 and 1.
-            xOnes = xOnes || takeSign
             xOut = denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
-                            takeSign=takeSign, cuts=cuts, xOnes=xOnes)
+                        takeSign=takeSign, cuts=cuts)
+        elseif (nn[i]["type"] == "dense")
+            actFunc = ""
+            if (haskey(nn[i], "activation"))
+                actFunc = nn[i]["activation"]
+            end
+            xOut = dense(m, xIn, nn[i]["weights"], nn[i]["bias"],
+                        nn[i]["upper"], nn[i]["lower"],
+                        actFunc=actFunc, cuts=cuts)
         else
             error("Not support layer.")
         end

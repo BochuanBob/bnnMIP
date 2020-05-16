@@ -4,11 +4,9 @@ export denseBin
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
-# xOnes: xOne is true if each entry of input is either -1 or 1.
-# False otherwise.
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
-               takeSign=false, cuts=true, xOnes=true) where{T<:Real, U<:Real}
+               takeSign=false, cuts=true) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -27,8 +25,7 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
                     base_name="z_$count")
         @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
         for i in 1:yLen
-            neuronSign!(m, x, y[i], weights[i, :], bias[i], cuts=cuts,
-                        xOnes=xOnes)
+            neuronSign!(m, x, y[i], weights[i, :], bias[i], cuts=cuts)
         end
     else
         y = @variable(m, [1:yLen],
@@ -54,7 +51,7 @@ end
 # Otherwise, cuts for the ideal formulation are added to the model.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 weightVec::Array{T, 1}, b::U;
-                cuts=false, xOnes=true) where{T<:Real, U<:Real}
+                cuts=false) where{T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
@@ -63,11 +60,7 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         @constraint(m, yi == 1)
         return nothing
     end
-    tau = b
-    kappa = b
-    if (xOnes)
-        tau, kappa = getTauAndKappa(nonzeroNum, b)
-    end
+    tau, kappa = getTauAndKappa(nonzeroNum, b)
     Iset1 = union(oneIndices, negOneIndices)
     @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
                 oneIndices, negOneIndices, tau)>=0)

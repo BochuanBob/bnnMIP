@@ -12,6 +12,9 @@ function activation1D(m::JuMP.Model, x::VarOrAff,
 		for i in 1:xLen
 			relu!(m, x[i], y[i], upper=upper, lower=lower)
 		end
+	elseif(funcName=="")
+		# No activation function: just pass through x.
+		@constraint(m, x .== y)
 	end
 	return y
 end
