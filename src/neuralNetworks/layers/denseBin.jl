@@ -93,7 +93,6 @@ end
 function getCutsIndices(xVal::Array{T, 1}, yVal::U,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1}) where {T<:Real, U<:Real}
-    xLen = length(xVal)
     I1 = Array{Int64, 1}([])
     I2 = Array{Int64, 1}([])
     for i in oneIndices

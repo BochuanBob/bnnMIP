@@ -17,6 +17,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
             xOut = activation1D(m, xIn, nn[i]["function"],
                     upper = nn[i]["upper"], lower = nn[i]["lower"])
         elseif (nn[i]["type"] == "denseBin")
+            takeSign = false
             if (haskey(nn[i], "activation"))
                 takeSign = (nn[i]["activation"] == "Sign")
             end

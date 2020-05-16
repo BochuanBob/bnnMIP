@@ -11,6 +11,12 @@ function preprocNN(nn)
         elseif (haskey(nn[i], "bias"))
             nn[i]["bias"] = nn[i]["bias"][:]
         end
+        if (haskey(nn[i], "upper"))
+            nn[i]["upper"] = nn[i]["upper"][:]
+        end
+        if (haskey(nn[i], "lower"))
+            nn[i]["lower"] = nn[i]["lower"][:]
+        end
     end
     # TODO: Work on this function later.
     return nn

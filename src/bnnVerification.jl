@@ -1,4 +1,4 @@
-using JuMP, Gurobi
+using JuMP, Gurobi, MAT
 
 include("neuralNetworks.jl")
 include("utilities.jl")
@@ -7,16 +7,15 @@ m = direct_model(Gurobi.Optimizer(OutputFlag=1))
 nn = readNN("nn.mat", "nn")
 testImages = readOneVar("data.mat", "test_images")
 testLabels = readOneVar("data.mat", "test_labels")
+
 inputSize = nn[1]["inputSize"]
-# inputSize = NTuple{3, Int}(inputSize)
 @assert inputSize isa NTuple{N, Int} where {N}
 x = Array{VariableRef}(undef, inputSize)
 for idx in eachindex(x)
     x[idx] = @variable(m)
 end
-#println(size(testImages[1, :, :, :]))
 @constraint(m, x .== testImages[1, :, :, :])
-y = getBNNoutput(m, nn, x, cuts=false)
+y = getBNNoutput(m, nn, x, cuts=true)
 @objective(m, Min, 0)
 optimize!(m)
 # Do the forward propagation to test the correctness.

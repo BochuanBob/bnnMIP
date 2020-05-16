@@ -8,7 +8,7 @@ function activation1D(m::JuMP.Model, x::VarOrAff,
 	m.ext[:NN].count += 1
 	xLen = length(x)
 	y = @variable(m, [1:xLen], base_name="y_$count")
-	if (funcName=="relu")
+	if (funcName=="ReLU")
 		for i in 1:xLen
 			relu!(m, x[i], y[i], upper=upper, lower=lower)
 		end
