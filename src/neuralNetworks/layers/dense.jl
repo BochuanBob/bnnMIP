@@ -68,8 +68,8 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     if (cuts)
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            xVal = callback_value(cb_data, xNew)
-            yVal = callback_value(cb_data, yi)
+            xVal = JuMP.callback_value(cb_data, xNew)
+            yVal = JuMP.callback_value(cb_data, yi)
             I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
                                     upper,lower)
             con1 = @build_constraint(getBNNCutFirstConGE(m, xNew, yi, I1,
@@ -92,7 +92,8 @@ function transformProc(m::JuMP.Model, negIndices::Array{Int64, 1}, x::VarOrAff,
     xLen = length(x)
     upperNew = zeros(xLen)
     lowerNew = zeros(xLen)
-    z = @variable(m, [1:xLen], base_name="xNew_$count")
+    # z = @variable(m, [1:xLen], base_name="xNew_$count")
+    z = @variable(m, [1:xLen])
     for i in 1:xLen
         if (i in negIndices)
             @constraint(m, z[i] == -x[i])

@@ -4,6 +4,7 @@ function preprocNN(nn)
     inputSize = nn[1]["inputSize"]
     N = length(inputSize)
     nn[1]["inputSize"] = NTuple{N, Int}(inputSize)
+    @assert nn[1]["inputSize"] isa NTuple{N, Int} where {N}
     for i in 1:nnLen
         if (haskey(nn[i], "weights") && ~haskey(nn[i], "bias"))
             weights = nn[i]["weights"]
