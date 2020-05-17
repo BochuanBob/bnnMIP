@@ -68,7 +68,11 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     if (cuts)
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            xVal = JuMP.callback_value(cb_data, xNew)
+            xLen = length(xNew)
+            xVal = zeros(length(xNew))
+            for i in 1:xLen
+                xVal[i] = JuMP.callback_value(cb_data, xNew[i])
+            end
             yVal = JuMP.callback_value(cb_data, yi)
             I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
                                     upper,lower)
