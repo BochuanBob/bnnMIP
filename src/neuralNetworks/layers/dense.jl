@@ -41,45 +41,45 @@ end
 # If cuts == false, it is a Big-M formulation.
 # Otherwise, cuts for the ideal formulation are added to the model.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
-                weightVec::Array{T, 1}, b::U,
+                wVec::Array{T, 1}, b::U,
                 upper::Array{V, 1}, lower::Array{W, 1};
                 cuts=false) where{T<:Real, U<:Real, V<:Real, W<:Real}
     # initNN!(m)
-    posIndices = findall(weightVec .> 0)
-    negIndices = findall(weightVec .< 0)
+    posIndices = findall(wVec .> 0)
+    negIndices = findall(wVec .< 0)
     nonzeroIndices = union(posIndices, negIndices)
     nonzeroNum = length(nonzeroIndices)
     if (nonzeroNum == 0)
         @constraint(m, yi == 1)
         return nothing
     end
+    tol = 10^(-8)
     Iset1 = union(posIndices, negIndices)
-    xNew, uNew, lNew = transformProc(m, negIndices, x, upper, lower)
-    wVec=abs.(weightVec)
-    @constraint(m, getBNNCutFirstConGE(m, xNew, yi, Iset1,
+    uNew, lNew = transformProc(negIndices, upper, lower)
+    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
                 nonzeroIndices,wVec,b,uNew, lNew)>=0)
-    @constraint(m, getBNNCutSecondConGE(m, xNew, yi, Iset1,
-                nonzeroIndices,wVec,b,uNew, lNew)>=0)
+    @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset1,
+                nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
     Iset2 = Array{Int64, 1}([])
-    @constraint(m, getBNNCutFirstConGE(m, xNew, yi, Iset2,
+    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
                 nonzeroIndices,wVec,b,uNew, lNew)>=0)
-    @constraint(m, getBNNCutSecondConGE(m, xNew, yi, Iset2,
-                nonzeroIndices,wVec,b,uNew, lNew)>=0)
+    @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset2,
+                nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
     if (cuts)
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            xLen = length(xNew)
-            xVal = zeros(length(xNew))
+            xLen = length(x)
+            xVal = zeros(length(x))
             for i in 1:xLen
-                xVal[i] = JuMP.callback_value(cb_data, xNew[i])
+                xVal[i] = JuMP.callback_value(cb_data, x[i])
             end
             yVal = JuMP.callback_value(cb_data, yi)
             I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
                                     upper,lower)
-            con1 = @build_constraint(getBNNCutFirstConGE(m, xNew, yi, I1,
+            con1 = @build_constraint(getBNNCutFirstConGE(m, x, yi, I1,
                         nonzeroIndices,wVec,b,uNew, lNew)>=0)
-            con2 = @build_constraint(getBNNCutSecondConGE(m, xNew, yi, I2,
-                        nonzeroIndices,wVec,b,uNew, lNew)>=0)
+            con2 = @build_constraint(getBNNCutSecondConGE(m, x, yi, I2,
+                        nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             MOI.submit(m, MOI.UserCut(cb_data), con2)
         end
@@ -89,27 +89,21 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
 end
 # A transformation for Fourier-Motzkin procedure.
 # When
-function transformProc(m::JuMP.Model, negIndices::Array{Int64, 1}, x::VarOrAff,
+function transformProc(negIndices::Array{Int64, 1},
             upper::Array{T, 1}, lower::Array{U, 1}) where {T<:Real, U<:Real}
-    initNN!(m)
-    count = m.ext[:NN].count
-    xLen = length(x)
-    upperNew = zeros(xLen)
-    lowerNew = zeros(xLen)
-    # z = @variable(m, [1:xLen], base_name="xNew_$count")
-    z = @variable(m, [1:xLen])
-    for i in 1:xLen
+    uLen = length(upper)
+    upperNew = zeros(uLen)
+    lowerNew = zeros(uLen)
+    for i in 1:uLen
         if (i in negIndices)
-            @constraint(m, z[i] == -x[i])
-            upperNew[i] = -lower[i]
-            lowerNew[i] = -upper[i]
+            upperNew[i] = lower[i]
+            lowerNew[i] = upper[i]
         else
-            @constraint(m, z[i] == x[i])
             upperNew[i] = upper[i]
             lowerNew[i] = lower[i]
         end
     end
-    return z, upperNew, lowerNew
+    return upperNew, lowerNew
 end
 
 # Output the I^1 and I^2 for two constraints in Proposition 1

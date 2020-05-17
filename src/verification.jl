@@ -1,6 +1,8 @@
 using JuMP
 include("neuralNetworks.jl")
 export perturbationVerify
+
+# Minimize the difference of outputs between true index and target index.
 function perturbationVerify(m::JuMP.Model, nn, input::Array,
                         trueIndex::Int64, targetIndex::Int64,
                         epsilon::Float64; cuts=true)
@@ -13,5 +15,34 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
     @constraint(m, x .>= input - epsilon)
     y = getBNNoutput(m, nn, x, cuts=cuts)
     @objective(m, Min, y[trueIndex] - y[targetIndex])
-    return y
+    return x, y
+end
+
+# Find the minimal epsilon such that nn(x_0) \neq nn(x_1)
+# for ||x_0 - x_1||_infty < epsilon. x_0 is the test data.
+function falsePredictVerify(m::JuMP.Model, nn, input::Array, trueIndex::Int64;
+                            cuts=true)
+    inputSize = nn[1]["inputSize"]
+    x = Array{VariableRef}(undef, inputSize)
+    for idx in eachindex(x)
+        x[idx] = @variable(m)
+    end
+    epsilon = @variable(m, lower_bound=0)
+    @constraint(m, x .<= input + epsilon)
+    @constraint(m, x .>= input - epsilon)
+    y = getBNNoutput(m, nn, x, cuts=cuts)
+    yLen= length(y)
+    z = @variable(m)
+    zz = @variable(m, [1:yLen], binary=true)
+    # Big-M formulation. TODO: Might want to change to
+    # other formulation.
+    M = 400
+    @constraint(m, sum(zz[i] for i in 1:yLen) == 1)
+    for i in setdiff(1:yLen, [trueIndex])
+        @constraint(m, z >= y[i])
+        @constraint(m, z <= y[i] + M * (1 - zz[i]))
+    end
+    @constraint(m, z >= y[trueIndex]+1)
+    @objective(m, Min, epsilon)
+    return x, y
 end

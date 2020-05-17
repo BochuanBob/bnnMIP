@@ -17,8 +17,6 @@ for i in 1:size(testImages, 1)
     end
     @constraint(m, x .== testImages[i, :, :, :])
     y = getBNNoutput(m, nn, x, cuts=true)
-    @objective(m, Min, 0)
-    optimize!(m)
     # Do the forward propagation to test the correctness.
 
     # Test the input data.
@@ -34,6 +32,10 @@ for i in 1:size(testImages, 1)
     l1 = sign.(weight1 * image + bias1)
     l2 = sign.(weight2 * l1 + bias2)
     l3 = weight3 * l2 + bias3
+
+    # @constraint(m, y .== l3)
+    @objective(m, Min, 0)
+    optimize!(m)
     if (mod(i, 10) == 0)
         println("Testing image ", i)
     end
