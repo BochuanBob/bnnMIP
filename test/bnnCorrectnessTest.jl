@@ -1,4 +1,6 @@
 using JuMP, Gurobi
+include("testFunc.jl")
+
 
 include("../src/neuralNetworks.jl")
 include("../src/utilities.jl")
@@ -21,19 +23,8 @@ for i in 1:size(testImages, 1)
 
     # Test the input data.
     image = testImages[i, :, :, :]
-    image = permutedims(image, [3,2,1])[:]
-    weight1 = nn[2]["weights"]
-    bias1 = nn[2]["bias"]
-    weight2 = nn[3]["weights"]
-    bias2 = nn[3]["bias"]
-    weight3 = nn[4]["weights"]
-    bias3 = nn[4]["bias"]
-
-    l1 = sign.(weight1 * image + bias1)
-    l2 = sign.(weight2 * l1 + bias2)
-    l3 = weight3 * l2 + bias3
-
-    # @constraint(m, y .== l3)
+    l3 = forwardProp(image)
+    @constraint(m, y .== l3)
     @objective(m, Min, 0)
     optimize!(m)
     if (mod(i, 10) == 0)

@@ -18,6 +18,27 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
     return x, y
 end
 
+# Find the minimum epsilon such that nn(x_1) = targetIndex
+# for ||x_0 - x_1||_infty < epsilon. x_0 is the test data.
+function targetVerify(m::JuMP.Model, nn, input::Array,
+                        targetIndex::Int64; cuts=true)
+    inputSize = nn[1]["inputSize"]
+    x = Array{VariableRef}(undef, inputSize)
+    for idx in eachindex(x)
+        x[idx] = @variable(m)
+    end
+    epsilon = @variable(m, lower_bound=0)
+    @constraint(m, x .<= input + epsilon)
+    @constraint(m, x .>= input - epsilon)
+    y = getBNNoutput(m, nn, x, cuts=cuts)
+    yLen= length(y)
+    for i in setdiff(1:yLen, [targetIndex])
+        @constraint(m, y[targetIndex] >= y[i] + 1)
+    end
+    @objective(m, Min, epsilon)
+    return x, y
+end
+
 # Find the minimal epsilon such that nn(x_0) \neq nn(x_1)
 # for ||x_0 - x_1||_infty < epsilon. x_0 is the test data.
 function falsePredictVerify(m::JuMP.Model, nn, input::Array, trueIndex::Int64;
@@ -38,6 +59,7 @@ function falsePredictVerify(m::JuMP.Model, nn, input::Array, trueIndex::Int64;
     # other formulation.
     M = 400
     @constraint(m, sum(zz[i] for i in 1:yLen) == 1)
+    @constraint(m, zz[trueIndex] == 0)
     for i in setdiff(1:yLen, [trueIndex])
         @constraint(m, z >= y[i])
         @constraint(m, z <= y[i] + M * (1 - zz[i]))
