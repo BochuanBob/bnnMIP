@@ -1,12 +1,12 @@
 include("layerSetup.jl")
-export denseBin
+export denseBin, getDenseBinCons
 
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
-               takeSign=false, cuts=true) where{T<:Real, U<:Real}
+               takeSign=false) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -25,7 +25,7 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
                     base_name="z_$count")
         @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
         for i in 1:yLen
-            neuronSign!(m, x, y[i], weights[i, :], bias[i], cuts=cuts)
+            neuronSign!(m, x, y[i], weights[i, :], bias[i])
         end
     else
         y = @variable(m, [1:yLen],
@@ -47,17 +47,19 @@ function checkWeights(weights::Array{T, 2}) where{T <: Real}
 end
 
 # A MIP formulation for a single neuron.
-# If cuts == false, it is a Big-M formulation.
-# Otherwise, cuts for the ideal formulation are added to the model.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
-                weightVec::Array{T, 1}, b::U;
-                cuts=false) where{T<:Real, U<:Real}
+                weightVec::Array{T, 1}, b::U
+                ) where{T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
     if (nonzeroNum == 0)
-        @constraint(m, yi == 1)
+        if (b >= 0)
+            @constraint(m, yi == 1)
+        else
+            @constraint(m, yi == -1)
+        end
         return nothing
     end
     tau, kappa = getTauAndKappa(nonzeroNum, b)
@@ -71,26 +73,38 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                     oneIndices, negOneIndices, tau)>=0)
     @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset2,
                     oneIndices, negOneIndices, kappa)<=0)
-    if (cuts)
-        # Generate cuts by callback function
-        function callbackCutsBNN(cb_data)
-            xLen = length(x)
-            xVal = zeros(length(x))
-            for i in 1:xLen
-                xVal[i] = JuMP.callback_value(cb_data, x[i])
-            end
-            yVal = JuMP.callback_value(cb_data, yi)
-            I1, I2 = getCutsIndices(xVal, yVal,oneIndices,negOneIndices)
-            con1 = @build_constraint(getBNNCutFirstConGE(m, x, yi, I1,
-                            oneIndices, negOneIndices, tau)>=0)
-            con2 = @build_constraint(getBNNCutSecondConLE(m, x, yi, I2,
-                            oneIndices, negOneIndices, kappa) <= 0)
-            MOI.submit(m, MOI.UserCut(cb_data), con1)
-            MOI.submit(m, MOI.UserCut(cb_data), con2)
-        end
-        MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
-    end
     return nothing
+end
+
+function getDenseBinCons(m::JuMP.Model, xIn::VarOrAff,
+                        xOut::VarOrAff, weights::Array{T, 2},
+                        bias::Array{U, 1}, cb_data) where{T<:Real, U<:Real}
+    conList = []
+    (yLen, xLen) = size(weights)
+    xVal = zeros(length(xIn))
+    for j in 1:xLen
+        xVal[j] = JuMP.callback_value(cb_data, xIn[j])
+    end
+    for i in 1:yLen
+        weightVec = weights[i, :]
+        b = bias[i]
+        oneIndices = findall(weightVec .== 1)
+        negOneIndices = findall(weightVec .== -1)
+        nonzeroNum = length(oneIndices) + length(negOneIndices)
+        if (nonzeroNum == 0)
+            continue
+        end
+        tau, kappa = getTauAndKappa(nonzeroNum, b)
+        yVal = JuMP.callback_value(cb_data, xOut[i])
+        I1, I2 = getCutsIndices(xVal, yVal,oneIndices,negOneIndices)
+        con1 = @build_constraint(getBNNCutFirstConGE(m, xIn, xOut[i], I1,
+                        oneIndices, negOneIndices, tau)>=0)
+        con2 = @build_constraint(getBNNCutSecondConLE(m, xIn, xOut[i], I2,
+                        oneIndices, negOneIndices, kappa) <= 0)
+        conList = vcat(conList, con1)
+        conList = vcat(conList, con2)
+    end
+    return conList
 end
 
 # Output the I^1 and I^2 for two constraints in Proposition 3

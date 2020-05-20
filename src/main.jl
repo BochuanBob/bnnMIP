@@ -5,21 +5,24 @@ nn = readNN("../data/nn.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
+# println(nn[2]["upper"])
+# println(nn[2]["lower"])
 
-for epsilon in [0.01, 0.015, 0.02, 0.025, 0.03]
+for epsilon in [0.015]
     for cuts in [true]
         if (cuts)
-            m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                CliqueCuts=0, CoverCuts=0, FlowCoverCuts=0,
-                FlowPathCuts=0, GUBCoverCuts=0, ImpliedCuts=0,
-                InfProofCuts=0, MIPSepCuts=0, MIRCuts=0,
-                ModKCuts=0,NetworkCuts=0,ProjImpliedCuts=0,
-                StrongCGCuts=0, SubMIPCuts=0, ZeroHalfCuts=0))
-                set_optimizer_attribute(m, "GomoryPasses", 0)
-                set_optimizer_attribute(m, "CutPasses", 2000000000)
+            # m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+            #     CliqueCuts=1, CoverCuts=1, FlowCoverCuts=1,
+            #     FlowPathCuts=1, GUBCoverCuts=1, ImpliedCuts=1,
+            #     InfProofCuts=1, MIPSepCuts=1, MIRCuts=1,
+            #     ModKCuts=1,NetworkCuts=1,ProjImpliedCuts=1,
+            #     StrongCGCuts=1, SubMIPCuts=1, ZeroHalfCuts=1))
+            m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1))
+            # set_optimizer_attribute(m, "GomoryPasses", 0)
+            # set_optimizer_attribute(m, "CutPasses", 2000000000)
         else
-            m = direct_model(Gurobi.Optimizer(OutputFlag=1))
-            set_optimizer_attribute(m, "CutPasses", 2000000000)
+            m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1))
+            # set_optimizer_attribute(m, "CutPasses", 2000000000)
         end
         i = 1
         input=testImages[i,:,:,:]

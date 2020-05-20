@@ -1,12 +1,12 @@
 include("layerSetup.jl")
 include("activation.jl")
-export dense
+export dense, getDenseCons
 
 # The MIP formulation for general dense layer
 function dense(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1},
                upper::Array{V, 1}, lower::Array{W, 1};
-               actFunc="", cuts=true
+               actFunc=""
                ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     initNN!(m)
     count = m.ext[:NN].count
@@ -23,7 +23,7 @@ function dense(m::JuMP.Model, x::VarOrAff,
         @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
         for i in 1:yLen
             neuronSign!(m, x, y[i], weights[i, :], bias[i],
-                        upper, lower, cuts=cuts)
+                        upper, lower)
         end
     else
         M = 1000
@@ -38,24 +38,26 @@ function dense(m::JuMP.Model, x::VarOrAff,
 end
 
 # A MIP formulation for a single neuron.
-# If cuts == false, it is a Big-M formulation.
-# Otherwise, cuts for the ideal formulation are added to the model.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 wVec::Array{T, 1}, b::U,
-                upper::Array{V, 1}, lower::Array{W, 1};
-                cuts=false) where{T<:Real, U<:Real, V<:Real, W<:Real}
+                upper::Array{V, 1}, lower::Array{W, 1}
+                ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     # initNN!(m)
     posIndices = findall(wVec .> 0)
     negIndices = findall(wVec .< 0)
     nonzeroIndices = union(posIndices, negIndices)
     nonzeroNum = length(nonzeroIndices)
     if (nonzeroNum == 0)
-        @constraint(m, yi == 1)
+        if (b >= 0)
+            @constraint(m, yi == 1)
+        else
+            @constraint(m, yi == -1)
+        end
         return nothing
     end
-    tol = 10^(-8)
-    Iset1 = union(posIndices, negIndices)
+    tol = 0
     uNew, lNew = transformProc(negIndices, upper, lower)
+    Iset1 = union(posIndices, negIndices)
     @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
                 nonzeroIndices,wVec,b,uNew, lNew)>=0)
     @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset1,
@@ -65,28 +67,45 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 nonzeroIndices,wVec,b,uNew, lNew)>=0)
     @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset2,
                 nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
-    if (cuts)
-        # Generate cuts by callback function
-        function callbackCutsBNN(cb_data)
-            xLen = length(x)
-            xVal = zeros(length(x))
-            for i in 1:xLen
-                xVal[i] = JuMP.callback_value(cb_data, x[i])
-            end
-            yVal = JuMP.callback_value(cb_data, yi)
-            I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
-                                    upper,lower)
-            con1 = @build_constraint(getBNNCutFirstConGE(m, x, yi, I1,
-                        nonzeroIndices,wVec,b,uNew, lNew)>=0)
-            con2 = @build_constraint(getBNNCutSecondConGE(m, x, yi, I2,
-                        nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
-            MOI.submit(m, MOI.UserCut(cb_data), con1)
-            MOI.submit(m, MOI.UserCut(cb_data), con2)
-        end
-        MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
-    end
     return nothing
 end
+
+function getDenseCons(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
+                        weights::Array{T, 2},bias::Array{U, 1},
+                        upper::Array{V, 1}, lower::Array{W, 1},
+                        cb_data) where{T<:Real, U<:Real, V<:Real, W<:Real}
+    conList = []
+    (yLen, xLen) = size(weights)
+    tol = 0
+    xVal = zeros(length(xIn))
+    for j in 1:xLen
+        xVal[j] = JuMP.callback_value(cb_data, xIn[j])
+    end
+    for i in 1:yLen
+        wVec = weights[i, :]
+        b = bias[i]
+        posIndices = findall(wVec .> 0)
+        negIndices = findall(wVec .< 0)
+        nonzeroIndices = union(posIndices, negIndices)
+        nonzeroNum = length(nonzeroIndices)
+        uNew, lNew = transformProc(negIndices, upper, lower)
+        if (nonzeroNum == 0)
+            continue
+        end
+        yVal = JuMP.callback_value(cb_data, xOut[i])
+        I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
+                                uNew,lNew)
+        con1 = @build_constraint(getBNNCutFirstConGE(m, xIn, xOut[i], I1,
+                    nonzeroIndices,wVec,b,uNew, lNew)>=0)
+        con2 = @build_constraint(getBNNCutSecondConGE(m, xIn, xOut[i], I2,
+                    nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
+        conList = vcat(conList, con1)
+        conList = vcat(conList, con2)
+    end
+    return conList
+end
+
+
 # A transformation for Fourier-Motzkin procedure.
 # When
 function transformProc(negIndices::Array{Int64, 1},
