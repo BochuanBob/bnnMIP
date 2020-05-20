@@ -1,14 +1,12 @@
 using JuMP, Gurobi
 include("utilities.jl")
 include("verification.jl")
+include("../test/testFunc.jl")
 nn = readNN("../data/nn.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
-# println(nn[2]["upper"])
-# println(nn[2]["lower"])
-
-for epsilon in [0.015]
+for epsilon in [0.012]
     for cuts in [true]
         if (cuts)
             # m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
@@ -33,6 +31,8 @@ for epsilon in [0.015]
         println("Using our cuts: ", cuts)
         println("Epsilon: ", epsilon)
         @time optimize!(m)
+        println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
+        println("Expected Output Based on Input: ", forwardProp(value.(x)))
         println("Output: ", value.(y))
     end
 end

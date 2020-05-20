@@ -4,7 +4,7 @@ export getBNNoutput
 # Add constraints such that y = NN(x).
 # If cuts == false, it is a Big-M formulation.
 # Otherwise, cuts for the ideal formulation are added to the model.
-function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
+function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
     initNN!(m)
     count = m.ext[:NN].count
     m.ext[:NN].count += 1
@@ -39,9 +39,19 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
             end
             xOut = dense(m, xIn, nn[i]["weights"], nn[i]["bias"],
                         nn[i]["upper"], nn[i]["lower"],
-                        actFunc=actFunc)
+                        actFunc=actFunc, image=image)
             nn[i]["takeSign"] = (actFunc=="Sign")
             nn[i]["xIn"] = xIn
+            nn[i]["xOut"] = xOut
+        elseif (nn[i]["type"] == "denseBinImage")
+            actFunc = ""
+            if (haskey(nn[i], "activation"))
+                actFunc = nn[i]["activation"]
+            end
+            xxIn, xOut = denseBinImage(m, xIn, nn[i]["weights"], nn[i]["bias"],
+                        takeSign=(actFunc=="Sign"))
+            nn[i]["takeSign"] = (actFunc=="Sign")
+            nn[i]["xIn"] = xxIn
             nn[i]["xOut"] = xOut
         else
             error("Not support layer.")
@@ -65,7 +75,15 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true)
                 xOut = nn[i]["xOut"]
                 conList = getDenseCons(m, xIn, xOut, nn[i]["weights"],
                                         nn[i]["bias"], nn[i]["upper"],
-                                        nn[i]["lower"], cb_data)
+                                        nn[i]["lower"], cb_data, image=image)
+                for con in conList
+                    MOI.submit(m, MOI.UserCut(cb_data), con)
+                end
+            elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
+                xIn = nn[i]["xIn"]
+                xOut = nn[i]["xOut"]
+                conList = getDenseBinImageCons(m, xIn, xOut, nn[i]["weights"],
+                                        nn[i]["bias"], cb_data)
                 for con in conList
                     MOI.submit(m, MOI.UserCut(cb_data), con)
                 end

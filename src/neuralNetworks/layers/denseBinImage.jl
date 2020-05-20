@@ -1,11 +1,11 @@
 include("layerSetup.jl")
 include("denseSetup.jl")
-export denseBin, getDenseBinCons
+export denseBinImage, getDenseBinImageCons
 
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
-function denseBin(m::JuMP.Model, x::VarOrAff,
+function denseBinImage(m::JuMP.Model, xhat::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
                takeSign=false) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
@@ -20,6 +20,9 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     end
     y = nothing
     if (takeSign)
+        bias = bias .* 255
+        x = @variable(m, [1:xLen], base_name="x_$count")
+        @constraint(m, x .== 255 .* xhat)
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
         z = @variable(m, [1:yLen], binary=true,
@@ -29,12 +32,14 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
             neuronSign!(m, x, y[i], weights[i, :], bias[i])
         end
     else
+        x = @variable(m, [1:xLen], base_name="x_$count")
+        @constraint(m, x .== xhat)
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
         @constraint(m, [i=1:yLen], y[i] ==
-                    bias[i] + sum(weights[i,j] * x[j] for j in 1:xLen))
+                    bias[i] + sum(weights[i,j] * xhat[j] for j in 1:xLen))
     end
-    return y
+    return x, y
 end
 
 # Checking each entry of weights must be in -1, 0, 1.
@@ -77,12 +82,13 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     return nothing
 end
 
-function getDenseBinCons(m::JuMP.Model, xIn::VarOrAff,
+function getDenseBinImageCons(m::JuMP.Model, xIn::VarOrAff,
                         xOut::VarOrAff, weights::Array{T, 2},
                         bias::Array{U, 1}, cb_data) where{T<:Real, U<:Real}
     conList = []
     (yLen, xLen) = size(weights)
     xVal = zeros(length(xIn))
+    bias = 255 .* bias
     for j in 1:xLen
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
     end
@@ -115,17 +121,17 @@ function getCutsIndices(xVal::Array{T, 1}, yVal::U,
     I1 = Array{Int64, 1}([])
     I2 = Array{Int64, 1}([])
     for i in oneIndices
-        if (xVal[i] < yVal)
+        if (xVal[i] < 255 * yVal)
             append!(I1, i)
-        elseif (xVal[i] > yVal)
+        elseif (xVal[i] > 255 * yVal)
             append!(I2, i)
         end
     end
 
     for i in negOneIndices
-        if (-xVal[i] < yVal)
+        if (-xVal[i] < 255 * yVal)
             append!(I1, i)
-        elseif (-xVal[i] > yVal)
+        elseif (-xVal[i] > 255 * yVal)
             append!(I2, i)
         end
     end
@@ -146,7 +152,8 @@ function getBNNCutFirstConGE(m::JuMP.Model,
     lenI = length(Iset)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
     expr = @expression(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
-                    -(((lenI - nonzeroNum - tau) * (1 + yi) /2) - (1 - yi) * lenI/2 ) )
+                    - (((255 * (lenI - nonzeroNum) - tau) * (1 + yi) /2)
+                    - (1 - yi) * 255 * lenI/2 ) )
     return expr
 end
 
@@ -163,6 +170,7 @@ function getBNNCutSecondConLE(m::JuMP.Model,
     lenI = length(Iset)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
     expr = @expression(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg)) -
-                ( ((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2))
+                ( ((1 + yi) * 255 * lenI/2)
+                - (255 * (lenI - nonzeroNum) + kappa)*(1 - yi)/2) )
     return expr
 end

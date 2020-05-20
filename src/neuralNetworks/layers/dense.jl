@@ -1,12 +1,13 @@
 include("layerSetup.jl")
 include("activation.jl")
+include("denseSetup.jl")
 export dense, getDenseCons
 
 # The MIP formulation for general dense layer
 function dense(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1},
                upper::Array{V, 1}, lower::Array{W, 1};
-               actFunc=""
+               actFunc="", image=true
                ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     initNN!(m)
     count = m.ext[:NN].count
@@ -23,7 +24,7 @@ function dense(m::JuMP.Model, x::VarOrAff,
         @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
         for i in 1:yLen
             neuronSign!(m, x, y[i], weights[i, :], bias[i],
-                        upper, lower)
+                        upper, lower, image=image)
         end
     else
         M = 1000
@@ -40,7 +41,7 @@ end
 # A MIP formulation for a single neuron.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 wVec::Array{T, 1}, b::U,
-                upper::Array{V, 1}, lower::Array{W, 1}
+                upper::Array{V, 1}, lower::Array{W, 1}; image=true
                 ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     # initNN!(m)
     posIndices = findall(wVec .> 0)
@@ -55,28 +56,33 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         end
         return nothing
     end
-    tol = 0
+    if (image)
+        tau, kappa = getTauAndKappa(nonzeroNum, 255*b)
+        tau = tau/255
+        kappa = kappa/255
+    else
+        tau, kappa= b, b
+    end
     uNew, lNew = transformProc(negIndices, upper, lower)
     Iset1 = union(posIndices, negIndices)
     @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
-                nonzeroIndices,wVec,b,uNew, lNew)>=0)
+                nonzeroIndices,wVec,tau,uNew, lNew)>=0)
     @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset1,
-                nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
+                nonzeroIndices,wVec,kappa,uNew, lNew)>=0)
     Iset2 = Array{Int64, 1}([])
     @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
-                nonzeroIndices,wVec,b,uNew, lNew)>=0)
+                nonzeroIndices,wVec,tau,uNew, lNew)>=0)
     @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset2,
-                nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
+                nonzeroIndices,wVec,kappa,uNew, lNew)>=0)
     return nothing
 end
 
 function getDenseCons(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                         weights::Array{T, 2},bias::Array{U, 1},
                         upper::Array{V, 1}, lower::Array{W, 1},
-                        cb_data) where{T<:Real, U<:Real, V<:Real, W<:Real}
+                        cb_data; image=true) where{T<:Real, U<:Real, V<:Real, W<:Real}
     conList = []
     (yLen, xLen) = size(weights)
-    tol = 0
     xVal = zeros(length(xIn))
     for j in 1:xLen
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
@@ -88,6 +94,13 @@ function getDenseCons(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         negIndices = findall(wVec .< 0)
         nonzeroIndices = union(posIndices, negIndices)
         nonzeroNum = length(nonzeroIndices)
+        if (image)
+            tau, kappa = getTauAndKappa(nonzeroNum, 255*b)
+            tau = tau/255
+            kappa = kappa/255
+        else
+            tau, kappa= b, b
+        end
         uNew, lNew = transformProc(negIndices, upper, lower)
         if (nonzeroNum == 0)
             continue
@@ -96,9 +109,9 @@ function getDenseCons(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
                                 uNew,lNew)
         con1 = @build_constraint(getBNNCutFirstConGE(m, xIn, xOut[i], I1,
-                    nonzeroIndices,wVec,b,uNew, lNew)>=0)
+                    nonzeroIndices,wVec,tau,uNew, lNew)>=0)
         con2 = @build_constraint(getBNNCutSecondConGE(m, xIn, xOut[i], I2,
-                    nonzeroIndices,wVec,b+tol,uNew, lNew)>=0)
+                    nonzeroIndices,wVec,kappa,uNew, lNew)>=0)
         conList = vcat(conList, con1)
         conList = vcat(conList, con2)
     end

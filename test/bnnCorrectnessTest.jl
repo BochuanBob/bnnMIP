@@ -1,4 +1,5 @@
 using JuMP, Gurobi
+using LinearAlgebra
 include("testFunc.jl")
 
 
@@ -24,12 +25,11 @@ for i in 1:size(testImages, 1)
     # Test the input data.
     image = testImages[i, :, :, :]
     l3 = forwardProp(image)
-    @constraint(m, y .== l3)
     @objective(m, Min, 0)
     optimize!(m)
     if (mod(i, 10) == 0)
         println("Testing image ", i)
     end
-    @assert value.(y) == l3
+    @assert norm(value.(y) - l3) < 10^(-6)
 end
 println("Passed all the forward propagation tests.")
