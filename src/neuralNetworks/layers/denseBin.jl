@@ -7,7 +7,7 @@ export denseBin, getDenseBinCons
 # Each entry of weights must be -1, 0, 1.
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
-               takeSign=false) where{T<:Real, U<:Real}
+               takeSign=false, image=true) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -26,7 +26,7 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
                     base_name="z_$count")
         @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
         for i in 1:yLen
-            neuronSign!(m, x, y[i], weights[i, :], bias[i])
+            neuronSign!(m, x, y[i], weights[i, :], bias[i], image=image)
         end
     else
         y = @variable(m, [1:yLen],
@@ -49,8 +49,8 @@ end
 
 # A MIP formulation for a single neuron.
 function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
-                weightVec::Array{T, 1}, b::U
-                ) where{T<:Real, U<:Real}
+                weightVec::Array{T, 1}, b::U;
+                image=true) where{T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
@@ -63,23 +63,28 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         end
         return nothing
     end
-    tau, kappa = getTauAndKappa(nonzeroNum, b)
+    if (image)
+        tau, kappa = getTauAndKappa(nonzeroNum, b)
+    else
+        tau, kappa = b, b
+    end
     Iset1 = union(oneIndices, negOneIndices)
     @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
                 oneIndices, negOneIndices, tau)>=0)
     @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset1,
                 oneIndices, negOneIndices, kappa)<=0)
-    Iset2 = Array{Int64, 1}([])
-    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
-                    oneIndices, negOneIndices, tau)>=0)
-    @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset2,
-                    oneIndices, negOneIndices, kappa)<=0)
+    # Iset2 = Array{Int64, 1}([])
+    # @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
+    #                 oneIndices, negOneIndices, tau)>=0)
+    # @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset2,
+    #                 oneIndices, negOneIndices, kappa)<=0)
     return nothing
 end
 
 function getDenseBinCons(m::JuMP.Model, xIn::VarOrAff,
                         xOut::VarOrAff, weights::Array{T, 2},
-                        bias::Array{U, 1}, cb_data) where{T<:Real, U<:Real}
+                        bias::Array{U, 1}, cb_data;
+                        image=true) where{T<:Real, U<:Real}
     conList = []
     (yLen, xLen) = size(weights)
     xVal = zeros(length(xIn))
@@ -95,7 +100,11 @@ function getDenseBinCons(m::JuMP.Model, xIn::VarOrAff,
         if (nonzeroNum == 0)
             continue
         end
-        tau, kappa = getTauAndKappa(nonzeroNum, b)
+        if (image)
+            tau, kappa = getTauAndKappa(nonzeroNum, b)
+        else
+            tau, kappa = b, b
+        end
         yVal = JuMP.callback_value(cb_data, xOut[i])
         I1, I2 = getCutsIndices(xVal, yVal,oneIndices,negOneIndices)
         con1 = @build_constraint(getBNNCutFirstConGE(m, xIn, xOut[i], I1,

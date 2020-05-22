@@ -57,9 +57,10 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         return nothing
     end
     if (image)
-        tau, kappa = getTauAndKappa(nonzeroNum, 255*b)
-        tau = tau/255
-        kappa = kappa/255
+        wSum = sum(wVec)
+        tau, kappa = getTauAndKappa(nonzeroNum, 510*b + wSum)
+        tau = (tau - wSum) / 510
+        kappa = (kappa - wSum) / 510
     else
         tau, kappa= b, b
     end
@@ -69,11 +70,11 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 nonzeroIndices,wVec,tau,uNew, lNew)>=0)
     @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset1,
                 nonzeroIndices,wVec,kappa,uNew, lNew)>=0)
-    Iset2 = Array{Int64, 1}([])
-    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
-                nonzeroIndices,wVec,tau,uNew, lNew)>=0)
-    @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset2,
-                nonzeroIndices,wVec,kappa,uNew, lNew)>=0)
+    # Iset2 = Array{Int64, 1}([])
+    # @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
+    #             nonzeroIndices,wVec,tau,uNew, lNew)>=0)
+    # @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset2,
+    #             nonzeroIndices,wVec,kappa,uNew, lNew)>=0)
     return nothing
 end
 
@@ -94,17 +95,18 @@ function getDenseCons(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         negIndices = findall(wVec .< 0)
         nonzeroIndices = union(posIndices, negIndices)
         nonzeroNum = length(nonzeroIndices)
+        if (nonzeroNum == 0)
+            continue
+        end
         if (image)
-            tau, kappa = getTauAndKappa(nonzeroNum, 255*b)
-            tau = tau/255
-            kappa = kappa/255
+            wSum = sum(wVec)
+            tau, kappa = getTauAndKappa(nonzeroNum, 510*b + wSum)
+            tau = (tau - wSum) / 510
+            kappa = (kappa - wSum) / 510
         else
             tau, kappa= b, b
         end
         uNew, lNew = transformProc(negIndices, upper, lower)
-        if (nonzeroNum == 0)
-            continue
-        end
         yVal = JuMP.callback_value(cb_data, xOut[i])
         I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
                                 uNew,lNew)

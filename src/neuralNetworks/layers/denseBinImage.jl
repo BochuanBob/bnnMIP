@@ -74,11 +74,11 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 oneIndices, negOneIndices, tau)>=0)
     @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset1,
                 oneIndices, negOneIndices, kappa)<=0)
-    Iset2 = Array{Int64, 1}([])
-    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
-                    oneIndices, negOneIndices, tau)>=0)
-    @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset2,
-                    oneIndices, negOneIndices, kappa)<=0)
+    # Iset2 = Array{Int64, 1}([])
+    # @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset2,
+    #                 oneIndices, negOneIndices, tau)>=0)
+    # @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset2,
+    #                 oneIndices, negOneIndices, kappa)<=0)
     return nothing
 end
 

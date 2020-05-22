@@ -28,7 +28,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
             # After the first sign() function, the input of each binary layer
             # has entries of -1 and 1.
             xOut = denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
-                        takeSign=takeSign)
+                        takeSign=takeSign, image=image)
             nn[i]["takeSign"] = takeSign
             nn[i]["xIn"] = xIn
             nn[i]["xOut"] = xOut
@@ -59,39 +59,42 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
         xIn = xOut
     end
     y = xOut
-    # Generate cuts by callback function
-    function callbackCutsBNN(cb_data)
-        for i in 1:nnLen
-            if (nn[i]["type"] == "denseBin" && nn[i]["takeSign"])
-                xIn = nn[i]["xIn"]
-                xOut = nn[i]["xOut"]
-                conList = getDenseBinCons(m, xIn, xOut, nn[i]["weights"],
-                                        nn[i]["bias"], cb_data)
-                for con in conList
-                    MOI.submit(m, MOI.UserCut(cb_data), con)
-                end
-            elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
-                xIn = nn[i]["xIn"]
-                xOut = nn[i]["xOut"]
-                conList = getDenseCons(m, xIn, xOut, nn[i]["weights"],
-                                        nn[i]["bias"], nn[i]["upper"],
-                                        nn[i]["lower"], cb_data, image=image)
-                for con in conList
-                    MOI.submit(m, MOI.UserCut(cb_data), con)
-                end
-            elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
-                xIn = nn[i]["xIn"]
-                xOut = nn[i]["xOut"]
-                conList = getDenseBinImageCons(m, xIn, xOut, nn[i]["weights"],
-                                        nn[i]["bias"], cb_data)
-                for con in conList
-                    MOI.submit(m, MOI.UserCut(cb_data), con)
+    # Whether submit the cuts to Gurobi.
+    if (cuts)
+        # Generate cuts by callback function
+        function callbackCutsBNN(cb_data)
+            for i in 1:nnLen
+                if (nn[i]["type"] == "denseBin" && nn[i]["takeSign"])
+                    xIn = nn[i]["xIn"]
+                    xOut = nn[i]["xOut"]
+                    conList = getDenseBinCons(m, xIn, xOut, nn[i]["weights"],
+                                            nn[i]["bias"], cb_data, image=image)
+                    for con in conList
+                        MOI.submit(m, MOI.UserCut(cb_data), con)
+                    end
+                elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
+                    xIn = nn[i]["xIn"]
+                    xOut = nn[i]["xOut"]
+                    conList = getDenseCons(m, xIn, xOut, nn[i]["weights"],
+                                            nn[i]["bias"], nn[i]["upper"],
+                                            nn[i]["lower"], cb_data, image=image)
+                    for con in conList
+                        try
+                            MOI.submit(m, MOI.UserCut(cb_data), con)
+                        catch e
+                        end
+                    end
+                elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
+                    xIn = nn[i]["xIn"]
+                    xOut = nn[i]["xOut"]
+                    conList = getDenseBinImageCons(m, xIn, xOut, nn[i]["weights"],
+                                            nn[i]["bias"], cb_data)
+                    for con in conList
+                        MOI.submit(m, MOI.UserCut(cb_data), con)
+                    end
                 end
             end
         end
-    end
-    # Whether submit the cuts to Gurobi.
-    if (cuts)
         MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     end
     return y
