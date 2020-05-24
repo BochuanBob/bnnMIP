@@ -1,6 +1,6 @@
 include("layerSetup.jl")
 include("denseSetup.jl")
-export denseBinImage, getDenseBinImageCons
+export denseBinImage, addDenseBinImageCons!
 
 # A fully connected layer with sign() or
 # without activation function.
@@ -82,10 +82,9 @@ function neuronSign!(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     return nothing
 end
 
-function getDenseBinImageCons(m::JuMP.Model, xIn::VarOrAff,
+function addDenseBinImageCons!(m::JuMP.Model, xIn::VarOrAff,
                         xOut::VarOrAff, weights::Array{T, 2},
                         bias::Array{U, 1}, cb_data) where{T<:Real, U<:Real}
-    conList = []
     (yLen, xLen) = size(weights)
     xVal = zeros(length(xIn))
     bias = 255 .* bias
@@ -108,10 +107,10 @@ function getDenseBinImageCons(m::JuMP.Model, xIn::VarOrAff,
                         oneIndices, negOneIndices, tau)>=0)
         con2 = @build_constraint(getBNNCutSecondConLE(m, xIn, xOut[i], I2,
                         oneIndices, negOneIndices, kappa) <= 0)
-        conList = vcat(conList, con1)
-        conList = vcat(conList, con2)
+        MOI.submit(m, MOI.UserCut(cb_data), con1)
+        MOI.submit(m, MOI.UserCut(cb_data), con2)
     end
-    return conList
+    return nothing
 end
 
 # Output the I^1 and I^2 for two constraints in Proposition 3

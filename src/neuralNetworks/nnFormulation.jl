@@ -28,8 +28,13 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
             end
             # After the first sign() function, the input of each binary layer
             # has entries of -1 and 1.
-            xOut = denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
+            xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
+                        denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
                         takeSign=takeSign, image=image)
+            nn[i]["tauList"] = tauList
+            nn[i]["kappaList"] = kappaList
+            nn[i]["oneIndicesList"] = oneIndicesList
+            nn[i]["negOneIndicesList"] = negOneIndicesList
             nn[i]["takeSign"] = takeSign
             nn[i]["xIn"] = xIn
             nn[i]["xOut"] = xOut
@@ -38,9 +43,15 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
             if (haskey(nn[i], "activation"))
                 actFunc = nn[i]["activation"]
             end
-            xOut = dense(m, xIn, nn[i]["weights"], nn[i]["bias"],
+            xOut, tauList, kappaList, nonzeroIndicesList, uNewList, lNewList =
+                        dense(m, xIn, nn[i]["weights"], nn[i]["bias"],
                         nn[i]["upper"], nn[i]["lower"],
                         actFunc=actFunc, image=image)
+            nn[i]["tauList"] = tauList
+            nn[i]["kappaList"] = kappaList
+            nn[i]["nonzeroIndicesList"] = nonzeroIndicesList
+            nn[i]["uNewList"] = uNewList
+            nn[i]["lNewList"] = lNewList
             nn[i]["takeSign"] = (actFunc=="Sign")
             nn[i]["xIn"] = xIn
             nn[i]["xOut"] = xOut
@@ -69,14 +80,19 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
                     if (nn[i]["type"] == "denseBin" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
-                        addDenseBinCons!(m, xIn, xOut, nn[i]["weights"],
-                                            nn[i]["bias"], cb_data, image=image)
+                        addDenseBinCons!(m, xIn, xOut, nn[i]["tauList"],
+                                            nn[i]["kappaList"],
+                                            nn[i]["oneIndicesList"],
+                                            nn[i]["negOneIndicesList"],
+                                            cb_data)
                     elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
                         addDenseCons!(m, xIn, xOut, nn[i]["weights"],
-                                            nn[i]["bias"], nn[i]["upper"],
-                                            nn[i]["lower"], cb_data, image=image)
+                                        nn[i]["tauList"], nn[i]["kappaList"],
+                                        nn[i]["nonzeroIndicesList"],
+                                        nn[i]["uNewList"], nn[i]["lNewList"],
+                                        cb_data)
                     elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
