@@ -37,6 +37,7 @@ boundsOut = zeros(totalLen)
 nodesOut = zeros(totalLen)
 consOut = zeros(totalLen)
 itersOut = zeros(totalLen)
+callbackOut = zeros(totalLen)
 
 count = [1]
 
@@ -80,6 +81,7 @@ for epsilon in epsilonList
             nodesOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("NodeCount"))
             consOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("NumConstrs"))
             itersOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("IterCount"))
+            callbackOut[count[1]] = callbackTimeTotal
             count[1] = count[1] + 1
         end
     end
@@ -89,5 +91,5 @@ df = DataFrame(Samples=sampleIndexList, TrueIndices=trueIndexList,
             TargetIndices=targetIndexList, Methods=methodsOut,
             Epsilons=epsilonOut, RunTimes=runTimeOut, Objs=objsOut,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
-            IterCount=itersOut)
+            IterCount=itersOut, callbackTimes=callbackOut)
 CSV.write("../output/results2x100.csv", df)

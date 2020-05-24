@@ -9,7 +9,7 @@ end
 
 # In order to add base_name for variables.
 function initNN!(m::JuMP.Model)
-    if !haskey(m.ext, :ROT)
+    if !haskey(m.ext, :NN)
         m.ext[:NN] = nnData()
     end
     return nothing

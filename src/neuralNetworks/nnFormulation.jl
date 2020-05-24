@@ -5,6 +5,7 @@ export getBNNoutput
 # If cuts == false, it is a Big-M formulation.
 # Otherwise, cuts for the ideal formulation are added to the model.
 function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
+    global callbackTimeTotal = 0.0
     initNN!(m)
     count = m.ext[:NN].count
     m.ext[:NN].count += 1
@@ -63,37 +64,28 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
     if (cuts)
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            for i in 1:nnLen
-                if (nn[i]["type"] == "denseBin" && nn[i]["takeSign"])
-                    xIn = nn[i]["xIn"]
-                    xOut = nn[i]["xOut"]
-                    conList = getDenseBinCons(m, xIn, xOut, nn[i]["weights"],
+            callbackTime = @elapsed begin
+                for i in 1:nnLen
+                    if (nn[i]["type"] == "denseBin" && nn[i]["takeSign"])
+                        xIn = nn[i]["xIn"]
+                        xOut = nn[i]["xOut"]
+                        addDenseBinCons!(m, xIn, xOut, nn[i]["weights"],
                                             nn[i]["bias"], cb_data, image=image)
-                    for con in conList
-                        MOI.submit(m, MOI.UserCut(cb_data), con)
-                    end
-                elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
-                    xIn = nn[i]["xIn"]
-                    xOut = nn[i]["xOut"]
-                    conList = getDenseCons(m, xIn, xOut, nn[i]["weights"],
+                    elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
+                        xIn = nn[i]["xIn"]
+                        xOut = nn[i]["xOut"]
+                        addDenseCons!(m, xIn, xOut, nn[i]["weights"],
                                             nn[i]["bias"], nn[i]["upper"],
                                             nn[i]["lower"], cb_data, image=image)
-                    for con in conList
-                        try
-                            MOI.submit(m, MOI.UserCut(cb_data), con)
-                        catch e
-                        end
-                    end
-                elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
-                    xIn = nn[i]["xIn"]
-                    xOut = nn[i]["xOut"]
-                    conList = getDenseBinImageCons(m, xIn, xOut, nn[i]["weights"],
-                                            nn[i]["bias"], cb_data)
-                    for con in conList
-                        MOI.submit(m, MOI.UserCut(cb_data), con)
+                    elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
+                        xIn = nn[i]["xIn"]
+                        xOut = nn[i]["xOut"]
+                        addDenseBinImageCons!(m, xIn, xOut, nn[i]["weights"],
+                                                nn[i]["bias"], cb_data)
                     end
                 end
             end
+            callbackTimeTotal += callbackTime
         end
         MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     end
