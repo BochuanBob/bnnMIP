@@ -91,10 +91,13 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
     for j in 1:xLen
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
     end
+    contFlag = true
     for i in 1:yLen
         yVal = JuMP.callback_value(cb_data, xOut[i])
         if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
             continue
+        else
+            # contFlag = false
         end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
@@ -112,7 +115,7 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
         MOI.submit(m, MOI.UserCut(cb_data), con1)
         MOI.submit(m, MOI.UserCut(cb_data), con2)
     end
-    return nothing
+    return contFlag
 end
 
 # Output the I^1 and I^2 for two constraints in Proposition 3

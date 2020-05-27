@@ -80,22 +80,26 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     return tau, kappa, nonzeroIndices, uNew, lNew
 end
 
+
 function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                         weights::Array{T, 2},tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         nonzeroIndicesList::Array{Array{Int64, 1}},
                         uNewList::Array{Array{Float64, 1}, 1},
                         lNewList::Array{Array{Float64, 1}, 1},
-                        cb_data) where{T<:Real}
+                        cb_data; image=true) where{T<:Real}
     yLen, xLen = length(xOut), length(xIn)
     xVal = zeros(xLen)
     for j in 1:xLen
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
     end
+    contFlag = true
     for i in 1:yLen
         yVal = JuMP.callback_value(cb_data, xOut[i])
         if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
             continue
+        else
+            # contFlag = false
         end
         wVec = weights[i, :]
         nonzeroIndices = nonzeroIndicesList[i]
@@ -107,14 +111,17 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         uNew, lNew = uNewList[i], lNewList[i]
         I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
                                 uNew,lNew)
-        con1 = getFirstCon(xIn, xOut[i], I1,
-                    nonzeroIndices, wVec, tau, uNew, lNew)
-        con2 = getSecondCon(xIn, xOut[i], I2,
-                    nonzeroIndices, wVec, kappa, uNew, lNew)
-        MOI.submit(m, MOI.UserCut(cb_data), con1)
-        MOI.submit(m, MOI.UserCut(cb_data), con2)
+        try
+            con1 = getFirstCon(xIn, xOut[i], I1,
+                        nonzeroIndices, wVec, tau, uNew, lNew)
+            con2 = getSecondCon(xIn, xOut[i], I2,
+                        nonzeroIndices, wVec, kappa, uNew, lNew)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+        catch e
+        end
     end
-    return nothing
+    return contFlag
 end
 
 
@@ -143,7 +150,6 @@ function getCutsIndices(xVal::Array{T, 1}, yVal::U,
                         w::Array{V, 1},
                         upper::Array{W, 1}, lower::Array{X, 1}
                         ) where {T<:Real, U<:Real, V<:Real, W<:Real, X<:Real}
-    # TODO: Implement the function.
     I1 = Array{Int64, 1}([])
     I2 = Array{Int64, 1}([])
     for i in nonzeroIndices
@@ -166,7 +172,6 @@ function getBNNCutFirstConGE(m::JuMP.Model,
                             w::Array{V, 1},b::T,
                             upper::Array{U, 1}, lower::Array{W, 1}
                             ) where {V<:Real, U<:Real, W<:Real, T <: Real}
-    # TODO: Implement the function.
     IsetC = setdiff(nonzeroIndices, Iset)
     expr = @expression(m, 2 * (sum(w[i]*x[i] for i in Iset) +
                         sum(w[i] * upper[i] for i in IsetC) + b) -
@@ -185,7 +190,6 @@ function getBNNCutSecondConGE(m::JuMP.Model,
                             w::Array{V, 1},b::T,
                             upper::Array{U, 1}, lower::Array{W, 1}
                             ) where {V<:Real, U<:Real, W<:Real, T <: Real}
-    # TODO: Implement the function.
     IsetC = setdiff(nonzeroIndices, Iset)
     expr = @expression(m, 2 * sum(w[i]*(upper[i] - x[i]) for i in Iset) -
                         (sum(w[i]*upper[i] for i in Iset) +
@@ -203,7 +207,6 @@ function getFirstCon(x::VarOrAff, yi::VarOrAff,
                             w::Array{V, 1},b::T,
                             upper::Array{U, 1}, lower::Array{W, 1}
                             ) where {V<:Real, U<:Real, W<:Real, T <: Real}
-    # TODO: Implement the function.
     IsetC = setdiff(nonzeroIndices, Iset)
     return @build_constraint(2 * (sum(w[i]*x[i] for i in Iset) +
                         sum(w[i] * upper[i] for i in IsetC) + b) >=
@@ -220,7 +223,6 @@ function getSecondCon(x::VarOrAff, yi::VarOrAff,
                             w::Array{V, 1},b::T,
                             upper::Array{U, 1}, lower::Array{W, 1}
                             ) where {V<:Real, U<:Real, W<:Real, T <: Real}
-    # TODO: Implement the function.
     IsetC = setdiff(nonzeroIndices, Iset)
     return @build_constraint(2 * sum(w[i]*(upper[i] - x[i]) for i in Iset) >=
                         (sum(w[i]*upper[i] for i in Iset) +

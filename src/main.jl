@@ -21,7 +21,7 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 100
+timeLimit = 1000
 
 # Ouputs
 totalLen = 3*length(epsilonList)*num
@@ -61,13 +61,14 @@ for epsilon in epsilonList
             input=testImages[sampleIndex[i],:,:,:]
             trueIndex=trueIndices[i]
             targetIndex=targetIndices[i]
-            x, y = perturbationVerify(m, nn, input, trueIndex,
+            x, xInt, y = perturbationVerify(m, nn, input, trueIndex,
                                     targetIndex, epsilon, cuts=cuts, image=true)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
             optimize!(m)
             println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
-            println("Expected Output Based on Input: ", forwardProp(value.(x)))
+            println("Expected Output Based on Input: ",
+                forwardPropInt(Int64.(value.(xInt))))
             println("Output: ", value.(y))
 
             sampleIndexList[count[1]] = sampleIndex[i]

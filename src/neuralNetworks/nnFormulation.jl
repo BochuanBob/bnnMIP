@@ -43,7 +43,8 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
             if (haskey(nn[i], "activation"))
                 actFunc = nn[i]["activation"]
             end
-            xOut, tauList, kappaList, nonzeroIndicesList, uNewList, lNewList =
+            xOut, tauList, kappaList, nonzeroIndicesList,
+                        uNewList, lNewList =
                         dense(m, xIn, nn[i]["weights"], nn[i]["bias"],
                         nn[i]["upper"], nn[i]["lower"],
                         actFunc=actFunc, image=image)
@@ -74,13 +75,22 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
     # Whether submit the cuts to Gurobi.
     if (cuts)
         # Generate cuts by callback function
+        global iter = 0
         function callbackCutsBNN(cb_data)
             callbackTime = @elapsed begin
+                flag = true
+                iter = iter + 1
+                if (mod(iter, 100) != 1)
+                    return
+                end
                 for i in 1:nnLen
+                    if (~flag)
+                        break
+                    end
                     if (nn[i]["type"] == "denseBin" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
-                        addDenseBinCons!(m, xIn, xOut, nn[i]["tauList"],
+                        flag = addDenseBinCons!(m, xIn, xOut, nn[i]["tauList"],
                                             nn[i]["kappaList"],
                                             nn[i]["oneIndicesList"],
                                             nn[i]["negOneIndicesList"],
@@ -88,15 +98,15 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
                     elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
-                        addDenseCons!(m, xIn, xOut, nn[i]["weights"],
+                        flag = addDenseCons!(m, xIn, xOut, nn[i]["weights"],
                                         nn[i]["tauList"], nn[i]["kappaList"],
                                         nn[i]["nonzeroIndicesList"],
                                         nn[i]["uNewList"], nn[i]["lNewList"],
-                                        cb_data)
+                                        cb_data, image=image)
                     elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
-                        addDenseBinImageCons!(m, xIn, xOut, nn[i]["weights"],
+                        flag = addDenseBinImageCons!(m, xIn, xOut, nn[i]["weights"],
                                                 nn[i]["bias"], cb_data)
                     end
                 end

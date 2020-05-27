@@ -8,14 +8,17 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
                         epsilon::Float64; cuts=true, image=true)
     inputSize = nn[1]["inputSize"]
     x = Array{VariableRef}(undef, inputSize)
+    xInt = Array{VariableRef}(undef, inputSize)
     for idx in eachindex(x)
         x[idx] = @variable(m)
+        xInt[idx] = @variable(m, integer=true, upper_bound=255,lower_bound=0)
+        @constraint(m, 255 * x[idx] == xInt[idx])
     end
     @constraint(m, x .<= input + epsilon)
     @constraint(m, x .>= input - epsilon)
     y = getBNNoutput(m, nn, x, cuts=cuts, image=image)
     @objective(m, Min, y[trueIndex] - y[targetIndex])
-    return x, y
+    return x, xInt, y
 end
 
 # Find the minimum epsilon such that nn(x_1) = targetIndex
@@ -24,8 +27,11 @@ function targetVerify(m::JuMP.Model, nn, input::Array,
                         targetIndex::Int64; cuts=true)
     inputSize = nn[1]["inputSize"]
     x = Array{VariableRef}(undef, inputSize)
+    xInt = Array{VariableRef}(undef, inputSize)
     for idx in eachindex(x)
         x[idx] = @variable(m)
+        xInt[idx] = @variable(m, integer=true, upper_bound=255,lower_bound=0)
+        @constraint(m, 255 * x[idx] == xInt[idx])
     end
     epsilon = @variable(m, lower_bound=0)
     @constraint(m, x .<= input + epsilon)
@@ -36,7 +42,7 @@ function targetVerify(m::JuMP.Model, nn, input::Array,
         @constraint(m, y[targetIndex] >= y[i] + 1)
     end
     @objective(m, Min, epsilon)
-    return x, y
+    return x, xInt, y
 end
 
 # Find the minimal epsilon such that nn(x_0) \neq nn(x_1)
