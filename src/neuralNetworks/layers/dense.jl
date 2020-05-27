@@ -33,14 +33,13 @@ function dense(m::JuMP.Model, x::VarOrAff,
                 weights[i, :], bias[i],
                 upper, lower, image=image)
         end
-    else
-        M = 1000
-        z = @variable(m, [1:yLen],
-                    base_name="z_$count")
-        @constraint(m, [i=1:yLen], z[i] ==
+    elseif (actFunc == "")
+        y = @variable(m, [1:yLen],
+                    base_name="y_$count")
+        @constraint(m, [i=1:yLen], y[i] ==
                     bias[i] + sum(weights[i,j] * x[j] for j in 1:xLen))
-        # TODO: Determine the values of lower and upper bounds.
-        y = activation1D(m, z, actFunc, upper=M, lower=-M)
+    else
+        error("Not supported activation functions for dense layer.")
     end
     return y, tauList, kappaList, nonzeroIndicesList, uNewList, lNewList
 end
@@ -111,15 +110,12 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         uNew, lNew = uNewList[i], lNewList[i]
         I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
                                 uNew,lNew)
-        try
-            con1 = getFirstCon(xIn, xOut[i], I1,
-                        nonzeroIndices, wVec, tau, uNew, lNew)
-            con2 = getSecondCon(xIn, xOut[i], I2,
-                        nonzeroIndices, wVec, kappa, uNew, lNew)
-            MOI.submit(m, MOI.UserCut(cb_data), con1)
-            MOI.submit(m, MOI.UserCut(cb_data), con2)
-        catch e
-        end
+        con1 = getFirstCon(xIn, xOut[i], I1,
+                    nonzeroIndices, wVec, tau, uNew, lNew)
+        con2 = getSecondCon(xIn, xOut[i], I2,
+                    nonzeroIndices, wVec, kappa, uNew, lNew)
+        MOI.submit(m, MOI.UserCut(cb_data), con1)
+        MOI.submit(m, MOI.UserCut(cb_data), con2)
     end
     return contFlag
 end
