@@ -91,18 +91,19 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
     for j in 1:xLen
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
     end
-
+    con1I = -1
+    con2I = -1
+    con1ValMax = 0
+    con2ValMax = 0
     contFlag = true
+    yVal = zeros(yLen)
     for i in 1:yLen
-        yVal = JuMP.callback_value(cb_data, xOut[i])
-        if (conIter > maxCons)
-            break
+        yVal[i] = JuMP.callback_value(cb_data, xOut[i])
+        if (abs(yVal[i] - 1) < 10^(-4) || abs(yVal[i] + 1) < 10^(-4))
+            continue
+        else
+            contFlag = false
         end
-        # if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
-        #     continue
-        # else
-        #     # contFlag = false
-        # end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
@@ -110,22 +111,38 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
             continue
         end
         tau, kappa = tauList[i], kappaList[i]
-        I1Add, I2Add = decideViolationConsBin(xVal, yVal, oneIndices,
+        con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, nonzeroNum, tau, kappa)
-        if (I1Add)
-            I1pos, I1neg = getFirstBinCutIndices(xVal, yVal,
-                            oneIndices,negOneIndices)
-            lenI1 = length(I1pos) + length(I1neg)
-            con1 = getfirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
-            MOI.submit(m, MOI.UserCut(cb_data), con1)
+        if (con1Val > con1ValMax)
+            con1ValMax = con1Val
+            con1I = i
         end
-        if (I2Add)
-            I2pos, I2neg = getSecondBinCutIndices(xVal, yVal,
-                            oneIndices,negOneIndices)
-            lenI2 = length(I2pos) + length(I2neg)
-            con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-            MOI.submit(m, MOI.UserCut(cb_data), con2)
+        if (con2Val > con2ValMax)
+            con2ValMax = con2Val
+            con2I = i
         end
+    end
+    if (con1I > 0)
+        oneIndices = oneIndicesList[con1I]
+        negOneIndices = negOneIndicesList[con1I]
+        tau = tauList[con1I]
+        nonzeroNum = length(oneIndices) + length(negOneIndices)
+        I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[con1I],
+                        oneIndices,negOneIndices)
+        lenI1 = length(I1pos) + length(I1neg)
+        con1 = getfirstBinCon(xIn,xOut[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
+        MOI.submit(m, MOI.UserCut(cb_data), con1)
+    end
+    if (con2I > 0)
+        oneIndices = oneIndicesList[con2I]
+        negOneIndices = negOneIndicesList[con2I]
+        kappa = kappaList[con2I]
+        nonzeroNum = length(oneIndices) + length(negOneIndices)
+        I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[con2I],
+                        oneIndices,negOneIndices)
+        lenI2 = length(I2pos) + length(I2neg)
+        con2 = getSecondBinCon(xIn,xOut[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+        MOI.submit(m, MOI.UserCut(cb_data), con2)
     end
     return contFlag
 end
@@ -134,7 +151,7 @@ function decideViolationConsBin(xVal::Array{R1, 1}, yVal::R2,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1},
                         nonzeroNum::Int64,
-                        tau::R3, kappa::R4; tol = 0) where {R1<:Real, R2<:Real,
+                        tau::R3, kappa::R4) where {R1<:Real, R2<:Real,
                         R3<:Real, R4<:Real}
     # Initially, I = []
     con1Val = (nonzeroNum + tau) * (1+yVal) / 2
@@ -155,7 +172,7 @@ function decideViolationConsBin(xVal::Array{R1, 1}, yVal::R2,
             con2Val += delta
         end
     end
-    return (con1Val < -tol), (con2Val > tol)
+    return -con1Val, con2Val
 end
 
 # Output positive and negative I^1 for the first constraint in Proposition 3.

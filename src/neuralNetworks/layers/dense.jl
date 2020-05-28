@@ -95,16 +95,18 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
     end
     contFlag = true
+    con1I = -1
+    con2I = -1
+    con1ValMax = 0
+    con2ValMax = 0
+    yVal = zeros(yLen)
     for i in 1:yLen
-        yVal = JuMP.callback_value(cb_data, xOut[i])
-        if (conIter > maxCons)
-            break
+        yVal[i] = JuMP.callback_value(cb_data, xOut[i])
+        if (abs(yVal[i] - 1) < 10^(-4) || abs(yVal[i] + 1) < 10^(-4))
+            continue
+        else
+            contFlag = false
         end
-        # if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
-        #     continue
-        # else
-        #     # contFlag = false
-        # end
         wVec = weights[i, :]
         nonzeroIndices = nonzeroIndicesList[i]
         nonzeroNum = length(nonzeroIndices)
@@ -113,22 +115,38 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         end
         tau, kappa = tauList[i], kappaList[i]
         uNew, lNew = uNewList[i], lNewList[i]
-        I1Add, I2Add = decideViolationCons(xVal, yVal,nonzeroIndices,wVec, tau,
-                        kappa, uNew,lNew)
-        if (I1Add)
-            I1 = getFirstCutIndices(xVal, yVal,nonzeroIndices,wVec,
-                                    uNew,lNew)
-            con1 = getFirstCon(xIn, xOut[i], I1,
-                        nonzeroIndices, wVec, tau, uNew, lNew)
-            MOI.submit(m, MOI.UserCut(cb_data), con1)
+        con1Val, con2Val = decideViolationCons(xVal, yVal[i],nonzeroIndices,
+                            wVec, tau, kappa, uNew,lNew)
+        if (con1Val > con1ValMax)
+            con1ValMax = con1Val
+            con1I = i
         end
-        if (I2Add)
-            I2 = getSecondCutIndices(xVal, yVal,nonzeroIndices,wVec,
-                                    uNew,lNew)
-            con2 = getSecondCon(xIn, xOut[i], I2,
-                        nonzeroIndices, wVec, kappa, uNew, lNew)
-            MOI.submit(m, MOI.UserCut(cb_data), con2)
+        if (con2Val > con2ValMax)
+            con2ValMax = con2Val
+            con2I = i
         end
+    end
+    if (con1I > 0)
+        wVec = weights[con1I, :]
+        nonzeroIndices = nonzeroIndicesList[con1I]
+        tau = tauList[con1I]
+        uNew, lNew = uNewList[con1I], lNewList[con1I]
+        I1 = getFirstCutIndices(xVal, yVal[con1I],nonzeroIndices,wVec,
+                                uNew,lNew)
+        con1 = getFirstCon(xIn, xOut[con1I], I1,
+                    nonzeroIndices, wVec, tau, uNew, lNew)
+        MOI.submit(m, MOI.UserCut(cb_data), con1)
+    end
+    if (con2I > 0)
+        wVec = weights[con2I, :]
+        nonzeroIndices = nonzeroIndicesList[con2I]
+        kappa = kappaList[con2I]
+        uNew, lNew = uNewList[con2I], lNewList[con2I]
+        I2 = getSecondCutIndices(xVal, yVal[con2I],nonzeroIndices,wVec,
+                                uNew,lNew)
+        con2 = getSecondCon(xIn, xOut[con2I], I2,
+                    nonzeroIndices, wVec, kappa, uNew, lNew)
+        MOI.submit(m, MOI.UserCut(cb_data), con2)
     end
     return contFlag
 end
@@ -168,7 +186,7 @@ function decideViolationCons(xVal::Array{R1, 1}, yVal::R2,
         con1Val = con1Val + min(0, con1Delta)
         con2Val = con2Val + min(0, con1Delta)
     end
-    return (con1Val < -tol), (con2Val < -tol)
+    return -con1Val, -con2Val
 end
 
 # Output I^1 for the first constraint in Proposition 1
