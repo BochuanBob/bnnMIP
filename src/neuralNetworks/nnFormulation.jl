@@ -74,8 +74,13 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
     y = xOut
     # Whether submit the cuts to Gurobi.
     if (cuts)
+        global iter = 0
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
+            iter += 1
+            if (mod(iter, 10) != 1)
+                return
+            end
             callbackTime = @elapsed begin
                 flag = true
                 for i in 1:nnLen

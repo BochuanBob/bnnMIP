@@ -16,6 +16,8 @@ function dense(m::JuMP.Model, x::VarOrAff,
     if (length(bias) != yLen)
         error("The sizes of weights and bias don't match!")
     end
+    @constraint(m, x .<= upper)
+    @constraint(m, x .>= lower)
     y = @variable(m, [1:yLen],
                 base_name="y_$count")
     tauList = zeros(yLen)
@@ -95,11 +97,14 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     contFlag = true
     for i in 1:yLen
         yVal = JuMP.callback_value(cb_data, xOut[i])
-        if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
-            continue
-        else
-            # contFlag = false
+        if (conIter > maxCons)
+            break
         end
+        # if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
+        #     continue
+        # else
+        #     # contFlag = false
+        # end
         wVec = weights[i, :]
         nonzeroIndices = nonzeroIndicesList[i]
         nonzeroNum = length(nonzeroIndices)
@@ -108,21 +113,28 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         end
         tau, kappa = tauList[i], kappaList[i]
         uNew, lNew = uNewList[i], lNewList[i]
-        I1, I2 = getCutsIndices(xVal, yVal,nonzeroIndices,wVec,
-                                uNew,lNew)
-        con1 = getFirstCon(xIn, xOut[i], I1,
-                    nonzeroIndices, wVec, tau, uNew, lNew)
-        con2 = getSecondCon(xIn, xOut[i], I2,
-                    nonzeroIndices, wVec, kappa, uNew, lNew)
-        MOI.submit(m, MOI.UserCut(cb_data), con1)
-        MOI.submit(m, MOI.UserCut(cb_data), con2)
+        I1Add, I2Add = decideViolationCons(xVal, yVal,nonzeroIndices,wVec, tau,
+                        kappa, uNew,lNew)
+        if (I1Add)
+            I1 = getFirstCutIndices(xVal, yVal,nonzeroIndices,wVec,
+                                    uNew,lNew)
+            con1 = getFirstCon(xIn, xOut[i], I1,
+                        nonzeroIndices, wVec, tau, uNew, lNew)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+        end
+        if (I2Add)
+            I2 = getSecondCutIndices(xVal, yVal,nonzeroIndices,wVec,
+                                    uNew,lNew)
+            con2 = getSecondCon(xIn, xOut[i], I2,
+                        nonzeroIndices, wVec, kappa, uNew, lNew)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+        end
     end
     return contFlag
 end
 
 
 # A transformation for Fourier-Motzkin procedure.
-# When
 function transformProc(negIndices::Array{Int64, 1},
             upper::Array{T, 1}, lower::Array{U, 1}) where {T<:Real, U<:Real}
     uLen = length(upper)
@@ -140,23 +152,53 @@ function transformProc(negIndices::Array{Int64, 1},
     return upperNew, lowerNew
 end
 
-# Output the I^1 and I^2 for two constraints in Proposition 1
-function getCutsIndices(xVal::Array{T, 1}, yVal::U,
+function decideViolationCons(xVal::Array{R1, 1}, yVal::R2,
+                        nonzeroIndices::Array{Int64, 1},
+                        w::Array{R3, 1}, tau::R4, kappa::R5,
+                        upper::Array{R6, 1}, lower::Array{R7, 1}; tol = 0
+                        ) where {R1<:Real, R2<:Real, R3<:Real, R4<:Real,
+                        R5<:Real, R6<:Real, R7<:Real}
+    # Initially, I = []
+    con1Val = 2 * (sum(w[i] * upper[i] for i in nonzeroIndices) + tau) -
+                (sum(w[i] * upper[i] for i in nonzeroIndices) + tau) * (1 - yVal)
+    con2Val = - (sum(w[i] * lower[i] for i in nonzeroIndices) + kappa) * (1 - yVal)
+    for i in nonzeroIndices
+        con1Delta = 2*w[i]*(xVal[i] - upper[i]) - w[i]*(lower[i]-upper[i])*(1-yVal)
+        con2Delta = 2*w[i]*(upper[i]-xVal[i]) - w[i]*(upper[i]-lower[i])*(1-yVal)
+        con1Val = con1Val + min(0, con1Delta)
+        con2Val = con2Val + min(0, con1Delta)
+    end
+    return (con1Val < -tol), (con2Val < -tol)
+end
+
+# Output I^1 for the first constraint in Proposition 1
+function getFirstCutIndices(xVal::Array{T, 1}, yVal::U,
                         nonzeroIndices::Array{Int64, 1},
                         w::Array{V, 1},
                         upper::Array{W, 1}, lower::Array{X, 1}
                         ) where {T<:Real, U<:Real, V<:Real, W<:Real, X<:Real}
     I1 = Array{Int64, 1}([])
-    I2 = Array{Int64, 1}([])
     for i in nonzeroIndices
         if (2*w[i]*(xVal[i] - upper[i]) < w[i]*(lower[i]-upper[i])*(1-yVal))
             append!(I1, i)
         end
+    end
+    return I1
+end
+
+# Output I^2 for the second constraint in Proposition 1
+function getSecondCutIndices(xVal::Array{T, 1}, yVal::U,
+                        nonzeroIndices::Array{Int64, 1},
+                        w::Array{V, 1},
+                        upper::Array{W, 1}, lower::Array{X, 1}
+                        ) where {T<:Real, U<:Real, V<:Real, W<:Real, X<:Real}
+    I2 = Array{Int64, 1}([])
+    for i in nonzeroIndices
         if (2*w[i]*(upper[i]-xVal[i]) < w[i]*(upper[i]-lower[i])*(1-yVal))
             append!(I2, i)
         end
     end
-    return I1, I2
+    return I2
 end
 
 # Return first constraint with given I, I^+, I^-, tau, kappa as shown
@@ -196,7 +238,7 @@ end
 
 
 # Return first constraint with given I, I^+, I^-, tau, kappa as shown
-# in Proposition 1.
+# in Proposition 1. An efficient implementation for user cuts.
 function getFirstCon(x::VarOrAff, yi::VarOrAff,
                             Iset::Array{Int64, 1},
                             nonzeroIndices::Array{Int64, 1},
@@ -212,7 +254,7 @@ function getFirstCon(x::VarOrAff, yi::VarOrAff,
 end
 
 # Return second constraint with given I, I^+, I^-, tau, kappa as shown
-# in Proposition 1.
+# in Proposition 1. An efficient implementation for user cuts.
 function getSecondCon(x::VarOrAff, yi::VarOrAff,
                             Iset::Array{Int64, 1},
                             nonzeroIndices::Array{Int64, 1},

@@ -22,9 +22,10 @@ for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
 timeLimit = 1000
+methodList = ["UserCuts"]
 
 # Ouputs
-totalLen = 3*length(epsilonList)*num
+totalLen = length(methodList)*length(epsilonList)*num
 sampleIndexList = Array{Int64, 1}(zeros(totalLen))
 trueIndexList = Array{Int64, 1}(zeros(totalLen))
 targetIndexList = Array{Int64, 1}(zeros(totalLen))
@@ -42,7 +43,7 @@ callbackOut = zeros(totalLen)
 count = [1]
 
 for epsilon in epsilonList
-    for method in ["NoCuts", "DefaultCuts", "AllCuts"]
+    for method in methodList
         for i in 1:num
             cuts = false
             if (method == "NoCuts")
@@ -55,20 +56,27 @@ for epsilon in epsilonList
                 cuts = false
             elseif (method == "AllCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1,
-                                TimeLimit=timeLimit))
+                                TimeLimit=timeLimit, PreCrush=1))
                 cuts = true
+            elseif (method == "UserCuts")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1))
+                cuts = true
+            else
+                error("Not supported method.")
             end
             input=testImages[sampleIndex[i],:,:,:]
             trueIndex=trueIndices[i]
             targetIndex=targetIndices[i]
             x, xInt, y = perturbationVerify(m, nn, input, trueIndex,
-                                    targetIndex, epsilon, cuts=cuts, image=true)
+                                    targetIndex, epsilon, cuts=cuts,
+                                    image=true, integer=false)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
             optimize!(m)
             println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
             println("Expected Output Based on Input: ",
-                forwardPropInt(Int64.(value.(xInt))))
+                forwardProp(value.(x)))
             println("Output: ", value.(y))
 
             sampleIndexList[count[1]] = sampleIndex[i]
@@ -93,4 +101,4 @@ df = DataFrame(Samples=sampleIndexList, TrueIndices=trueIndexList,
             Epsilons=epsilonOut, RunTimes=runTimeOut, Objs=objsOut,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
             IterCount=itersOut, callbackTimes=callbackOut)
-CSV.write("../output/results2x100.csv", df)
+CSV.write("results2x100.csv", df)

@@ -91,14 +91,18 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
     for j in 1:xLen
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
     end
+
     contFlag = true
     for i in 1:yLen
         yVal = JuMP.callback_value(cb_data, xOut[i])
-        if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
-            continue
-        else
-            # contFlag = false
+        if (conIter > maxCons)
+            break
         end
+        # if (abs(yVal - 1) < 10^(-4) || abs(yVal + 1) < 10^(-4))
+        #     continue
+        # else
+        #     # contFlag = false
+        # end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
@@ -106,43 +110,92 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
             continue
         end
         tau, kappa = tauList[i], kappaList[i]
-        I1pos, I1neg, I2pos, I2neg =
-                    getBinCutsIndices(xVal, yVal,oneIndices,negOneIndices)
-        lenI1 = length(I1pos) + length(I1neg)
-        lenI2 = length(I2pos) + length(I2neg)
-        con1 = getfirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
-        con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-        MOI.submit(m, MOI.UserCut(cb_data), con1)
-        MOI.submit(m, MOI.UserCut(cb_data), con2)
+        I1Add, I2Add = decideViolationConsBin(xVal, yVal, oneIndices,
+                        negOneIndices, nonzeroNum, tau, kappa)
+        if (I1Add)
+            I1pos, I1neg = getFirstBinCutIndices(xVal, yVal,
+                            oneIndices,negOneIndices)
+            lenI1 = length(I1pos) + length(I1neg)
+            con1 = getfirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+        end
+        if (I2Add)
+            I2pos, I2neg = getSecondBinCutIndices(xVal, yVal,
+                            oneIndices,negOneIndices)
+            lenI2 = length(I2pos) + length(I2neg)
+            con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+        end
     end
     return contFlag
 end
 
-# Output the I^1 and I^2 for two constraints in Proposition 3
-function getBinCutsIndices(xVal::Array{T, 1}, yVal::U,
+function decideViolationConsBin(xVal::Array{R1, 1}, yVal::R2,
+                        oneIndices::Array{Int64, 1},
+                        negOneIndices::Array{Int64, 1},
+                        nonzeroNum::Int64,
+                        tau::R3, kappa::R4; tol = 0) where {R1<:Real, R2<:Real,
+                        R3<:Real, R4<:Real}
+    # Initially, I = []
+    con1Val = (nonzeroNum + tau) * (1+yVal) / 2
+    con2Val = (kappa - nonzeroNum) * (1-yVal) / 2
+    for i in oneIndices
+        delta = xVal[i] - yVal
+        if (delta < 0)
+            con1Val += delta
+        elseif (delta > 0)
+            con2Val += delta
+        end
+    end
+    for i in negOneIndices
+        delta = -xVal[i] - yVal
+        if (delta < 0)
+            con1Val += delta
+        elseif (delta > 0)
+            con2Val += delta
+        end
+    end
+    return (con1Val < -tol), (con2Val > tol)
+end
+
+# Output positive and negative I^1 for the first constraint in Proposition 3.
+function getFirstBinCutIndices(xVal::Array{T, 1}, yVal::U,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1}) where {T<:Real, U<:Real}
     I1pos = Array{Int64, 1}([])
     I1neg = Array{Int64, 1}([])
-    I2pos = Array{Int64, 1}([])
-    I2neg = Array{Int64, 1}([])
     for i in oneIndices
         if (xVal[i] < yVal)
             append!(I1pos, i)
-        elseif (xVal[i] > yVal)
-            append!(I2pos, i)
         end
     end
-
     for i in negOneIndices
         if (-xVal[i] < yVal)
             append!(I1neg, i)
-        elseif (-xVal[i] > yVal)
+        end
+    end
+
+    return I1pos, I1neg
+end
+
+# Output positive and negative I^2 for the second constraint in Proposition 3.
+function getSecondBinCutIndices(xVal::Array{T, 1}, yVal::U,
+                        oneIndices::Array{Int64, 1},
+                        negOneIndices::Array{Int64, 1}) where {T<:Real, U<:Real}
+    I2pos = Array{Int64, 1}([])
+    I2neg = Array{Int64, 1}([])
+    for i in oneIndices
+        if (xVal[i] > yVal)
+            append!(I2pos, i)
+        end
+    end
+    for i in negOneIndices
+        if (-xVal[i] > yVal)
             append!(I2neg, i)
         end
     end
 
-    return I1pos, I1neg, I2pos, I2neg
+    return I2pos, I2neg
 end
 
 # Return first constraint with given I, I^+, I^-, tau, kappa as shown
@@ -179,7 +232,8 @@ function getBNNCutSecondConLE(m::JuMP.Model,
     return expr
 end
 
-
+# Return first constraint with given I, I^+, I^-, tau, kappa as shown
+# in Proposition 3. An efficient implementation for user cuts.
 function getfirstBinCon(x::VarOrAff, yi::VarOrAff,
                             Ipos::Array{Int64, 1},
                             Ineg::Array{Int64, 1},
@@ -191,7 +245,7 @@ function getfirstBinCon(x::VarOrAff, yi::VarOrAff,
 end
 
 # Return second constraint with given I, I^+, I^-, tau, kappa as shown
-# in Proposition 3.
+# in Proposition 3. An efficient implementation for user cuts.
 function getSecondBinCon(x::VarOrAff, yi::VarOrAff,
                             Ipos::Array{Int64, 1},
                             Ineg::Array{Int64, 1},

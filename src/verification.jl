@@ -5,14 +5,16 @@ export perturbationVerify
 # Minimize the difference of outputs between true index and target index.
 function perturbationVerify(m::JuMP.Model, nn, input::Array,
                         trueIndex::Int64, targetIndex::Int64,
-                        epsilon::Float64; cuts=true, image=true)
+                        epsilon::Float64; cuts=true, image=true, integer=false)
     inputSize = nn[1]["inputSize"]
     x = Array{VariableRef}(undef, inputSize)
     xInt = Array{VariableRef}(undef, inputSize)
     for idx in eachindex(x)
         x[idx] = @variable(m)
-        xInt[idx] = @variable(m, integer=true, upper_bound=255,lower_bound=0)
-        @constraint(m, 255 * x[idx] == xInt[idx])
+        if (integer)
+            xInt[idx] = @variable(m, integer=true, upper_bound=255,lower_bound=0)
+            @constraint(m, 255 * x[idx] == xInt[idx])
+        end
     end
     @constraint(m, x .<= input + epsilon)
     @constraint(m, x .>= input - epsilon)
@@ -24,14 +26,16 @@ end
 # Find the minimum epsilon such that nn(x_1) = targetIndex
 # for ||x_0 - x_1||_infty < epsilon. x_0 is the test data.
 function targetVerify(m::JuMP.Model, nn, input::Array,
-                        targetIndex::Int64; cuts=true)
+                        targetIndex::Int64; cuts=true, integer=true)
     inputSize = nn[1]["inputSize"]
     x = Array{VariableRef}(undef, inputSize)
     xInt = Array{VariableRef}(undef, inputSize)
     for idx in eachindex(x)
         x[idx] = @variable(m)
-        xInt[idx] = @variable(m, integer=true, upper_bound=255,lower_bound=0)
-        @constraint(m, 255 * x[idx] == xInt[idx])
+        if (integer)
+            xInt[idx] = @variable(m, integer=true, upper_bound=255,lower_bound=0)
+            @constraint(m, 255 * x[idx] == xInt[idx])
+        end
     end
     epsilon = @variable(m, lower_bound=0)
     @constraint(m, x .<= input + epsilon)
