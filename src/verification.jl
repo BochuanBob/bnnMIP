@@ -10,7 +10,11 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
     x = Array{VariableRef}(undef, inputSize)
     xInt = Array{VariableRef}(undef, inputSize)
     for idx in eachindex(x)
-        x[idx] = @variable(m)
+        if (image)
+            x[idx] = @variable(m, upper_bound=1, lower_bound=0)
+        else
+            x[idx] = @variable(m)
+        end
         if (integer)
             xInt[idx] = @variable(m, integer=true, upper_bound=255,lower_bound=0)
             @constraint(m, 255 * x[idx] == xInt[idx])

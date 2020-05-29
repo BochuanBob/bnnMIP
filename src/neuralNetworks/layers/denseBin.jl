@@ -24,11 +24,9 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     negOneIndicesList = Array{Array{Int64, 1}, 1}(undef, yLen)
     y = nothing
     if (takeSign)
-        y = @variable(m, [1:yLen],
-                    base_name="y_$count")
         z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
-        @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
+        y = @expression(m, 2 .* z .- 1)
         for i in 1:yLen
             tauList[i], kappaList[i], oneIndicesList[i], negOneIndicesList[i] =
                 neuronSign(m, x, y[i], weights[i, :], bias[i], image=image)
@@ -81,15 +79,15 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     return tau, kappa, oneIndices, negOneIndices
 end
 
-function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
-                        xOut::VarOrAff,tauList::Array{Float64, 1},
+function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
+                        tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         oneIndicesList::Array{Array{Int64, 1}, 1},
                         negOneIndicesList::Array{Array{Int64, 1}, 1}, cb_data)
     yLen, xLen = length(xOut), length(xIn)
     xVal = zeros(xLen)
     for j in 1:xLen
-        xVal[j] = JuMP.callback_value(cb_data, xIn[j])
+        xVal[j] = aff_callback_value(cb_data, xIn[j])
     end
     con1I = -1
     con2I = -1
@@ -98,11 +96,12 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
     contFlag = true
     yVal = zeros(yLen)
     for i in 1:yLen
-        yVal[i] = JuMP.callback_value(cb_data, xOut[i])
-        if (abs(yVal[i] - 1) < 10^(-4) || abs(yVal[i] + 1) < 10^(-4))
+        yVal[i] = aff_callback_value(cb_data, xOut[i])
+        if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
+        # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
             continue
         else
-            contFlag = false
+            # contFlag = false
         end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
@@ -132,6 +131,7 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
         lenI1 = length(I1pos) + length(I1neg)
         con1 = getfirstBinCon(xIn,xOut[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
         MOI.submit(m, MOI.UserCut(cb_data), con1)
+        m.ext[:CUTS].count += 1
     end
     if (con2I > 0)
         oneIndices = oneIndicesList[con2I]
@@ -143,6 +143,7 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff,
         lenI2 = length(I2pos) + length(I2neg)
         con2 = getSecondBinCon(xIn,xOut[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
         MOI.submit(m, MOI.UserCut(cb_data), con2)
+        m.ext[:CUTS].count += 1
     end
     return contFlag
 end

@@ -1,4 +1,5 @@
 include("layers.jl")
+using Gurobi
 export getBNNoutput
 
 # Add constraints such that y = NN(x).

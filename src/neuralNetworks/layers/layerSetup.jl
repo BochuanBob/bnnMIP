@@ -2,6 +2,8 @@ using JuMP
 const VarOrAff = Union{JuMP.VariableRef,JuMP.AffExpr,
                         Array{VariableRef}, Array{AffExpr}}
 
+export initNN!, aff_callback_value
+
 mutable struct nnData
     count::Int
     nnData() = new(0)
@@ -12,5 +14,16 @@ function initNN!(m::JuMP.Model)
     if !haskey(m.ext, :NN)
         m.ext[:NN] = nnData()
     end
+    if !haskey(m.ext, :CUTS)
+        m.ext[:CUTS] = nnData()
+    end
     return nothing
+end
+
+function aff_callback_value(cb_data, aff::GenericAffExpr{Float64,VariableRef})
+   ret = aff.constant
+   for (var, coef) in aff.terms
+       ret += coef * callback_value(cb_data, var)
+   end
+   return ret
 end

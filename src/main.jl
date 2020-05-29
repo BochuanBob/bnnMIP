@@ -7,7 +7,7 @@ include("utilities.jl")
 include("verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn2x200.mat", "nn")
+nn = readNN("../data/nn3x100.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
@@ -21,7 +21,7 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 1000
+timeLimit = 1800
 methodList = ["NoCuts", "DefaultCuts", "UserCuts"]
 
 # Ouputs
@@ -39,6 +39,7 @@ nodesOut = zeros(totalLen)
 consOut = zeros(totalLen)
 itersOut = zeros(totalLen)
 callbackOut = zeros(totalLen)
+userCutsOut = zeros(totalLen)
 
 count = [1]
 
@@ -76,7 +77,7 @@ for epsilon in epsilonList
             optimize!(m)
             println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
             println("Expected Output Based on Input: ",
-                forwardProp(value.(x)))
+                forwardProp(value.(x), nn))
             println("Output: ", value.(y))
 
             sampleIndexList[count[1]] = sampleIndex[i]
@@ -91,6 +92,7 @@ for epsilon in epsilonList
             consOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("NumConstrs"))
             itersOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("IterCount"))
             callbackOut[count[1]] = callbackTimeTotal
+            userCutsOut[count[1]]= m.ext[:CUTS].count
             count[1] = count[1] + 1
         end
     end
@@ -100,5 +102,5 @@ df = DataFrame(Samples=sampleIndexList, TrueIndices=trueIndexList,
             TargetIndices=targetIndexList, Methods=methodsOut,
             Epsilons=epsilonOut, RunTimes=runTimeOut, Objs=objsOut,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
-            IterCount=itersOut, callbackTimes=callbackOut)
-CSV.write("results2x200.csv", df)
+            IterCount=itersOut, callbackTimes=callbackOut, submittedCuts=userCutsOut)
+CSV.write("results3x100.csv", df)

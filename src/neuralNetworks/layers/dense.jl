@@ -16,10 +16,10 @@ function dense(m::JuMP.Model, x::VarOrAff,
     if (length(bias) != yLen)
         error("The sizes of weights and bias don't match!")
     end
-    @constraint(m, x .<= upper)
-    @constraint(m, x .>= lower)
-    y = @variable(m, [1:yLen],
-                base_name="y_$count")
+    if (~image)
+        @constraint(m, x .<= upper)
+        @constraint(m, x .>= lower)
+    end
     tauList = zeros(yLen)
     kappaList = zeros(yLen)
     nonzeroIndicesList = Array{Array{Int64, 1}, 1}(undef, yLen)
@@ -28,7 +28,7 @@ function dense(m::JuMP.Model, x::VarOrAff,
     if (actFunc=="Sign")
         z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
-        @constraint(m, [i=1:yLen], y[i] == 2 * z[i] - 1)
+        y = @expression(m, 2 .* z .- 1)
         for i in 1:yLen
             tauList[i], kappaList[i], nonzeroIndicesList[i],
                 uNewList[i], lNewList[i] = neuronDenseSign(m, x, y[i],
@@ -101,11 +101,12 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     con2ValMax = 0
     yVal = zeros(yLen)
     for i in 1:yLen
-        yVal[i] = JuMP.callback_value(cb_data, xOut[i])
-        if (abs(yVal[i] - 1) < 10^(-4) || abs(yVal[i] + 1) < 10^(-4))
+        yVal[i] = aff_callback_value(cb_data, xOut[i])
+        if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
+        # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
             continue
         else
-            contFlag = false
+            # contFlag = false
         end
         wVec = weights[i, :]
         nonzeroIndices = nonzeroIndicesList[i]
@@ -136,6 +137,7 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         con1 = getFirstCon(xIn, xOut[con1I], I1,
                     nonzeroIndices, wVec, tau, uNew, lNew)
         MOI.submit(m, MOI.UserCut(cb_data), con1)
+        m.ext[:CUTS].count += 1
     end
     if (con2I > 0)
         wVec = weights[con2I, :]
@@ -147,6 +149,7 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         con2 = getSecondCon(xIn, xOut[con2I], I2,
                     nonzeroIndices, wVec, kappa, uNew, lNew)
         MOI.submit(m, MOI.UserCut(cb_data), con2)
+        m.ext[:CUTS].count += 1
     end
     return contFlag
 end
