@@ -7,7 +7,7 @@ include("utilities.jl")
 include("verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn3x100.mat", "nn")
+nn = readNN("../data/nn2x200.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
@@ -22,7 +22,7 @@ for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
 timeLimit = 1800
-methodList = ["NoCuts", "DefaultCuts", "UserCuts"]
+methodList = ["NoCuts", "DefaultCuts", "UserCuts", "AllCuts"]
 
 # Ouputs
 totalLen = length(methodList)*length(epsilonList)*num
@@ -103,4 +103,4 @@ df = DataFrame(Samples=sampleIndexList, TrueIndices=trueIndexList,
             Epsilons=epsilonOut, RunTimes=runTimeOut, Objs=objsOut,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
             IterCount=itersOut, callbackTimes=callbackOut, submittedCuts=userCutsOut)
-CSV.write("results3x100.csv", df)
+CSV.write("results2x200.csv", df)

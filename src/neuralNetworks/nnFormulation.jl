@@ -115,6 +115,14 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
             callbackTimeTotal += callbackTime
         end
         MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
+    else
+        function callback(cb_data)
+            # callbackTime = @elapsed begin
+            # end
+            # callbackTimeTotal += callbackTime
+            return
+        end
+        MOI.set(m, MOI.UserCutCallback(), callback)
     end
     return y
 end

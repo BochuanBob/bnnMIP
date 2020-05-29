@@ -73,11 +73,16 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         tau, kappa= b, b
     end
     uNew, lNew = transformProc(negIndices, upper, lower)
-    Iset1 = union(posIndices, negIndices)
-    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
-                nonzeroIndices,wVec,tau,uNew, lNew)>=0)
-    @constraint(m, getBNNCutSecondConGE(m, x, yi, Iset1,
-                nonzeroIndices,wVec,kappa,uNew, lNew)>=0)
+    Iset = union(posIndices, negIndices)
+    IsetC = setdiff(nonzeroIndices, Iset)
+    w = wVec
+    @constraint(m, 2 * (sum(w[i]*x[i] for i in Iset) +
+                        sum(w[i] * uNew[i] for i in IsetC) + tau) >=
+                        ((sum(w[i]*lNew[i] for i in Iset) +
+                        sum(w[i] * uNew[i] for i in IsetC) + tau) * (1 - yi)) )
+    @constraint(m, 2 * sum(w[i]*(uNew[i] - x[i]) for i in Iset) >=
+                        ((sum(w[i]*uNew[i] for i in Iset) +
+                        sum(w[i]*lNew[i] for i in IsetC) + kappa) * (1 - yi)) )
     return tau, kappa, nonzeroIndices, uNew, lNew
 end
 

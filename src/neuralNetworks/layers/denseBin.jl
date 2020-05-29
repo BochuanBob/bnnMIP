@@ -58,24 +58,36 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
+
     if (nonzeroNum == 0)
         if (b >= 0)
             @constraint(m, yi == 1)
         else
             @constraint(m, yi == -1)
         end
-        return nothing
+        return b, b, oneIndices, negOneIndices
     end
     if (image)
         tau, kappa = getTauAndKappa(nonzeroNum, b)
     else
         tau, kappa = b, b
     end
+    if (tau >= nonzeroNum)
+        @constraint(m, yi == 1)
+        return tau, kappa, oneIndices, negOneIndices
+    end
+    if (kappa <= -nonzeroNum)
+        @constraint(m, yi == -1)
+        return tau, kappa, oneIndices, negOneIndices
+    end
     Iset1 = union(oneIndices, negOneIndices)
-    @constraint(m, getBNNCutFirstConGE(m, x, yi, Iset1,
-                oneIndices, negOneIndices, tau)>=0)
-    @constraint(m, getBNNCutSecondConLE(m, x, yi, Iset1,
-                oneIndices, negOneIndices, kappa)<=0)
+    Ipos = intersect(Iset1, oneIndices)
+    Ineg = intersect(Iset1, negOneIndices)
+    lenI = length(Iset1)
+    @constraint(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
+                    >=(((lenI - nonzeroNum - tau) * (1 + yi) /2) - (1 - yi) * lenI/2 ) )
+    @constraint(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
+                <=(((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2) )
     return tau, kappa, oneIndices, negOneIndices
 end
 
@@ -106,10 +118,10 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
-        if (nonzeroNum == 0)
+        tau, kappa = tauList[i], kappaList[i]
+        if (nonzeroNum == 0 || tau >= nonzeroNum || kappa <= -nonzeroNum)
             continue
         end
-        tau, kappa = tauList[i], kappaList[i]
         con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, nonzeroNum, tau, kappa)
         if (con1Val > con1ValMax)
@@ -214,40 +226,6 @@ function getSecondBinCutIndices(xVal::Array{T, 1}, yVal::U,
     end
 
     return I2pos, I2neg
-end
-
-# Return first constraint with given I, I^+, I^-, tau, kappa as shown
-# in Proposition 3.
-function getBNNCutFirstConGE(m::JuMP.Model,
-                            x::VarOrAff, yi::VarOrAff,
-                            Iset::Array{Int64, 1},
-                            oneIndices::Array{Int64, 1},
-                            negOneIndices::Array{Int64, 1},
-                            tau::T) where {T <: Real}
-    Ipos = intersect(Iset, oneIndices)
-    Ineg = intersect(Iset, negOneIndices)
-    lenI = length(Iset)
-    nonzeroNum = length(oneIndices) + length(negOneIndices)
-    expr = @expression(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
-                    -(((lenI - nonzeroNum - tau) * (1 + yi) /2) - (1 - yi) * lenI/2 ) )
-    return expr
-end
-
-# Return second constraint with given I, I^+, I^-, tau, kappa as shown
-# in Proposition 3.
-function getBNNCutSecondConLE(m::JuMP.Model,
-                            x::VarOrAff, yi::VarOrAff,
-                            Iset::Array{Int64, 1},
-                            oneIndices::Array{Int64, 1},
-                            negOneIndices::Array{Int64, 1},
-                            kappa::T) where {T <: Real}
-    Ipos = intersect(Iset, oneIndices)
-    Ineg = intersect(Iset, negOneIndices)
-    lenI = length(Iset)
-    nonzeroNum = length(oneIndices) + length(negOneIndices)
-    expr = @expression(m, (sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg)) -
-                ( ((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2))
-    return expr
 end
 
 # Return first constraint with given I, I^+, I^-, tau, kappa as shown
