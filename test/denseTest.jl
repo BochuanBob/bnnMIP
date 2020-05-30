@@ -9,7 +9,7 @@ function testDense!(xInput, weights::Array{T, 2}, bias::Array{U, 1},
     (yLen, xLen) = size(weights)
     x = @variable(m, [1:xLen], base_name="x")
     @constraint(m, [i=1:xLen], x[i] == xInput[i])
-    y = dense(m, x, weights, bias, upper, lower, actFunc=actFunc)
+    y, _, _, _, _ = dense(m, x, weights, bias, upper, lower, actFunc=actFunc)
     @objective(m, Min, 0)
     optimize!(m)
     if(actFunc=="Sign")
@@ -23,8 +23,8 @@ function testDense!(xInput, weights::Array{T, 2}, bias::Array{U, 1},
     return nothing
 end
 
-weights = Array{Float64, 2}([[1 2 3]; [30 1 10]])
-bias = Array{Float64, 1}([0, -100])
+weights = Array{Float64, 2}([[1 2 3]; [30 1 10]; [1 -1 1]])
+bias = Array{Float64, 1}([0, -100, 10000])
 xInput = Array{Float64, 1}([-3, 2, -4])
 upper = Array{Float64, 1}([10, 10, 10])
 lower = Array{Float64, 1}([-10, -10, -10])

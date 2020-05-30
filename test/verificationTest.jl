@@ -23,24 +23,25 @@ for i in 1:num
 end
 timeLimit = 100
 
-
 for epsilon in epsilonList
-    for method in ["AllCuts"]
-        for i in [3]
+    for method in ["NoCuts"]
+        for i in [1]
             cuts = false
             if (method == "NoCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit, FeasibilityTol=1e-9))
+                                TimeLimit=timeLimit))
                 cuts = false
             elseif (method == "DefaultCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1,
-                                TimeLimit=timeLimit, FeasibilityTol=1e-9))
+                                TimeLimit=timeLimit))
                 cuts = false
             elseif (method == "AllCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit, FeasibilityTol=1e-9,
-                                IntFeasTol=1e-9))
-                set_optimizer_attribute(m, "CutPasses", 100)
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
+                                Cuts=0, TimeLimit=timeLimit, Method=1))
+                # set_optimizer_attribute(m, "CutPasses", 100000000)
+                # , MIRCuts=1,
+                # ModKCuts=1,NetworkCuts=1,ProjImpliedCuts=1,
+                # StrongCGCuts=1
                 cuts = true
             end
             input=testImages[sampleIndex[i],:,:,:]
@@ -55,16 +56,19 @@ for epsilon in epsilonList
             println("True index: ", trueIndex)
             println("Target index: ", targetIndex)
             println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
+            println("Greater than 1: ", findall(value.(x) .> 1))
+            println("Less than 0: ", findall(value.(x) .< 0))
             println("Expected Output Based on Input: ",
-                forwardProp(value.(x)))
+                forwardProp(value.(x), nn))
             println("Output: ", value.(y))
             println("Runtime: ", MOI.get(m, Gurobi.ModelAttribute("Runtime")))
             println("Obj: ", MOI.get(m, Gurobi.ModelAttribute("ObjVal")))
-            println("Bound: ", MOI.get(m, Gurobi.ModelAttribute("ObjBoundC")))
-            println("Node: ", MOI.get(m, Gurobi.ModelAttribute("NodeCount")))
-            println("Cons: ", MOI.get(m, Gurobi.ModelAttribute("NumConstrs")))
-            println("Iters: ", MOI.get(m, Gurobi.ModelAttribute("IterCount")))
+            # println("Bound: ", MOI.get(m, Gurobi.ModelAttribute("ObjBoundC")))
+            # println("Node: ", MOI.get(m, Gurobi.ModelAttribute("NodeCount")))
+            # println("Cons: ", MOI.get(m, Gurobi.ModelAttribute("NumConstrs")))
+            # println("Iters: ", MOI.get(m, Gurobi.ModelAttribute("IterCount")))
             println("Callback: ", callbackTimeTotal)
+            println("User Cuts Submitted: ", m.ext[:CUTS].count)
         end
     end
 end

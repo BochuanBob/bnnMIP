@@ -8,7 +8,7 @@ function testDenseBin!(xInput, weights::Array{T, 2}, bias::Array{U, 1};
     (yLen, xLen) = size(weights)
     x = @variable(m, [1:xLen], base_name="x")
     @constraint(m, [i=1:xLen], x[i] == xInput[i])
-    y = denseBin(m, x, weights, bias, takeSign=takeSign)
+    y, _, _, _, _ = denseBin(m, x, weights, bias, takeSign=takeSign)
     @objective(m, Min, 0)
     optimize!(m)
     if(takeSign)
