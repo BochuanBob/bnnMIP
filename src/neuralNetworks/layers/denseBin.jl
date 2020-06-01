@@ -67,6 +67,7 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         end
         return b, b, oneIndices, negOneIndices
     end
+    # For comparison to not handling discontinuity.
     if (image)
         tau, kappa = getTauAndKappa(nonzeroNum, b)
     else
@@ -109,12 +110,12 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     yVal = zeros(yLen)
     for i in 1:yLen
         yVal[i] = aff_callback_value(cb_data, xOut[i])
-        if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
-        # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
-            continue
-        else
-            # contFlag = false
-        end
+        # if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
+        # # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
+        #     # continue
+        # else
+        #     # contFlag = false
+        # end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
@@ -125,37 +126,31 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, nonzeroNum, tau, kappa)
         if (con1Val > con1ValMax)
-            con1ValMax = con1Val
             con1I = i
+            oneIndices = oneIndicesList[con1I]
+            negOneIndices = negOneIndicesList[con1I]
+            tau = tauList[con1I]
+            nonzeroNum = length(oneIndices) + length(negOneIndices)
+            I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[con1I],
+                            oneIndices,negOneIndices)
+            lenI1 = length(I1pos) + length(I1neg)
+            con1 = getfirstBinCon(xIn,xOut[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+            m.ext[:CUTS].count += 1
         end
         if (con2Val > con2ValMax)
-            con2ValMax = con2Val
             con2I = i
+            oneIndices = oneIndicesList[con2I]
+            negOneIndices = negOneIndicesList[con2I]
+            kappa = kappaList[con2I]
+            nonzeroNum = length(oneIndices) + length(negOneIndices)
+            I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[con2I],
+                            oneIndices,negOneIndices)
+            lenI2 = length(I2pos) + length(I2neg)
+            con2 = getSecondBinCon(xIn,xOut[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+            m.ext[:CUTS].count += 1
         end
-    end
-    if (con1I > 0)
-        oneIndices = oneIndicesList[con1I]
-        negOneIndices = negOneIndicesList[con1I]
-        tau = tauList[con1I]
-        nonzeroNum = length(oneIndices) + length(negOneIndices)
-        I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[con1I],
-                        oneIndices,negOneIndices)
-        lenI1 = length(I1pos) + length(I1neg)
-        con1 = getfirstBinCon(xIn,xOut[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
-        MOI.submit(m, MOI.UserCut(cb_data), con1)
-        m.ext[:CUTS].count += 1
-    end
-    if (con2I > 0)
-        oneIndices = oneIndicesList[con2I]
-        negOneIndices = negOneIndicesList[con2I]
-        kappa = kappaList[con2I]
-        nonzeroNum = length(oneIndices) + length(negOneIndices)
-        I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[con2I],
-                        oneIndices,negOneIndices)
-        lenI2 = length(I2pos) + length(I2neg)
-        con2 = getSecondBinCon(xIn,xOut[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-        MOI.submit(m, MOI.UserCut(cb_data), con2)
-        m.ext[:CUTS].count += 1
     end
     return contFlag
 end

@@ -79,7 +79,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
             iter += 1
-            if (mod(iter, 10) != 1)
+            if (iter > 500 && mod(iter, 100) != 1)
                 return
             end
             callbackTime = @elapsed begin

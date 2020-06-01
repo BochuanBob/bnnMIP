@@ -107,12 +107,12 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     yVal = zeros(yLen)
     for i in 1:yLen
         yVal[i] = aff_callback_value(cb_data, xOut[i])
-        if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
-        # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
-            continue
-        else
-            # contFlag = false
-        end
+        # if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
+        # # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
+        #     # continue
+        # else
+        #     # contFlag = false
+        # end
         wVec = weights[i, :]
         nonzeroIndices = nonzeroIndicesList[i]
         nonzeroNum = length(nonzeroIndices)
@@ -123,39 +123,34 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         uNew, lNew = uNewList[i], lNewList[i]
         con1Val, con2Val = decideViolationCons(xVal, yVal[i],nonzeroIndices,
                             wVec, tau, kappa, uNew,lNew)
-        if (con1Val > con1ValMax)
-            con1ValMax = con1Val
+        if (con1Val > 0)
             con1I = i
+            wVec = weights[con1I, :]
+            nonzeroIndices = nonzeroIndicesList[con1I]
+            tau = tauList[con1I]
+            uNew, lNew = uNewList[con1I], lNewList[con1I]
+            I1 = getFirstCutIndices(xVal, yVal[con1I],nonzeroIndices,wVec,
+                                    uNew,lNew)
+            con1 = getFirstCon(xIn, xOut[con1I], I1,
+                        nonzeroIndices, wVec, tau, uNew, lNew)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+            m.ext[:CUTS].count += 1
         end
-        if (con2Val > con2ValMax)
-            con2ValMax = con2Val
+        if (con2Val > 0)
             con2I = i
+            wVec = weights[con2I, :]
+            nonzeroIndices = nonzeroIndicesList[con2I]
+            kappa = kappaList[con2I]
+            uNew, lNew = uNewList[con2I], lNewList[con2I]
+            I2 = getSecondCutIndices(xVal, yVal[con2I],nonzeroIndices,wVec,
+                                    uNew,lNew)
+            con2 = getSecondCon(xIn, xOut[con2I], I2,
+                        nonzeroIndices, wVec, kappa, uNew, lNew)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+            m.ext[:CUTS].count += 1
         end
     end
-    if (con1I > 0)
-        wVec = weights[con1I, :]
-        nonzeroIndices = nonzeroIndicesList[con1I]
-        tau = tauList[con1I]
-        uNew, lNew = uNewList[con1I], lNewList[con1I]
-        I1 = getFirstCutIndices(xVal, yVal[con1I],nonzeroIndices,wVec,
-                                uNew,lNew)
-        con1 = getFirstCon(xIn, xOut[con1I], I1,
-                    nonzeroIndices, wVec, tau, uNew, lNew)
-        MOI.submit(m, MOI.UserCut(cb_data), con1)
-        m.ext[:CUTS].count += 1
-    end
-    if (con2I > 0)
-        wVec = weights[con2I, :]
-        nonzeroIndices = nonzeroIndicesList[con2I]
-        kappa = kappaList[con2I]
-        uNew, lNew = uNewList[con2I], lNewList[con2I]
-        I2 = getSecondCutIndices(xVal, yVal[con2I],nonzeroIndices,wVec,
-                                uNew,lNew)
-        con2 = getSecondCon(xIn, xOut[con2I], I2,
-                    nonzeroIndices, wVec, kappa, uNew, lNew)
-        MOI.submit(m, MOI.UserCut(cb_data), con2)
-        m.ext[:CUTS].count += 1
-    end
+
     return contFlag
 end
 
@@ -226,42 +221,6 @@ function getSecondCutIndices(xVal::Array{T, 1}, yVal::U,
     end
     return I2
 end
-
-# Return first constraint with given I, I^+, I^-, tau, kappa as shown
-# in Proposition 1.
-function getBNNCutFirstConGE(m::JuMP.Model,
-                            x::VarOrAff, yi::VarOrAff,
-                            Iset::Array{Int64, 1},
-                            nonzeroIndices::Array{Int64, 1},
-                            w::Array{V, 1},b::T,
-                            upper::Array{U, 1}, lower::Array{W, 1}
-                            ) where {V<:Real, U<:Real, W<:Real, T <: Real}
-    IsetC = setdiff(nonzeroIndices, Iset)
-    expr = @expression(m, 2 * (sum(w[i]*x[i] for i in Iset) +
-                        sum(w[i] * upper[i] for i in IsetC) + b) -
-                        (sum(w[i]*lower[i] for i in Iset) +
-                        sum(w[i] * upper[i] for i in IsetC) + b) * (1 - yi)
-                        )
-    return expr
-end
-
-# Return second constraint with given I, I^+, I^-, tau, kappa as shown
-# in Proposition 1.
-function getBNNCutSecondConGE(m::JuMP.Model,
-                            x::VarOrAff, yi::VarOrAff,
-                            Iset::Array{Int64, 1},
-                            nonzeroIndices::Array{Int64, 1},
-                            w::Array{V, 1},b::T,
-                            upper::Array{U, 1}, lower::Array{W, 1}
-                            ) where {V<:Real, U<:Real, W<:Real, T <: Real}
-    IsetC = setdiff(nonzeroIndices, Iset)
-    expr = @expression(m, 2 * sum(w[i]*(upper[i] - x[i]) for i in Iset) -
-                        (sum(w[i]*upper[i] for i in Iset) +
-                        sum(w[i]*lower[i] for i in IsetC) + b) * (1 - yi)
-                        )
-    return expr
-end
-
 
 # Return first constraint with given I, I^+, I^-, tau, kappa as shown
 # in Proposition 1. An efficient implementation for user cuts.
