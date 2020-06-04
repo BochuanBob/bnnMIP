@@ -6,6 +6,8 @@ export perturbationVerify
 function perturbationVerify(m::JuMP.Model, nn, input::Array,
                         trueIndex::Int64, targetIndex::Int64,
                         epsilon::Float64; cuts=true, image=true, integer=false)
+    # Don't want to change the original data.
+    nn = copy(nn)
     inputSize = nn[1]["inputSize"]
     x = Array{VariableRef}(undef, inputSize)
     xInt = Array{VariableRef}(undef, inputSize)
@@ -20,8 +22,12 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
             @constraint(m, 255 * x[idx] == xInt[idx])
         end
     end
-    @constraint(m, x .<= input + epsilon)
-    @constraint(m, x .>= input - epsilon)
+    dim = length(size(input))
+    inputFlatten = permutedims(input, Array{Int64,1}(dim:-1:1))[:]
+    nn[2]["upper"] = ceil.(min.(nn[2]["upper"], inputFlatten .+ epsilon), digits=2)
+    nn[2]["lower"] = floor.(max.(nn[2]["lower"], inputFlatten .- epsilon), digits=2)
+    @constraint(m, x .<= input .+ epsilon)
+    @constraint(m, x .>= input .- epsilon)
     y = getBNNoutput(m, nn, x, cuts=cuts, image=image)
     @objective(m, Min, y[trueIndex] - y[targetIndex])
     return x, xInt, y

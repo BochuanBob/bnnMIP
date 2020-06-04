@@ -110,12 +110,12 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     yVal = zeros(yLen)
     for i in 1:yLen
         yVal[i] = aff_callback_value(cb_data, xOut[i])
-        # if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
-        # # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
-        #     # continue
-        # else
-        #     # contFlag = false
-        # end
+        if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
+        # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
+            # continue
+        else
+            contFlag = false
+        end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
