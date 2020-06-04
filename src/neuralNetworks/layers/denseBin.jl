@@ -125,7 +125,7 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         end
         con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, nonzeroNum, tau, kappa)
-        if (con1Val > con1ValMax)
+        if (con1Val > 0.1)
             con1I = i
             oneIndices = oneIndicesList[con1I]
             negOneIndices = negOneIndicesList[con1I]
@@ -134,11 +134,12 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[con1I],
                             oneIndices,negOneIndices)
             lenI1 = length(I1pos) + length(I1neg)
-            con1 = getfirstBinCon(xIn,xOut[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            con1 = getFirstBinCon(xIn,xOut[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            assertFirstBinCon(xVal,yVal[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (con2Val > con2ValMax)
+        if (con2Val > 0.1)
             con2I = i
             oneIndices = oneIndicesList[con2I]
             negOneIndices = negOneIndicesList[con2I]
@@ -148,6 +149,7 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                             oneIndices,negOneIndices)
             lenI2 = length(I2pos) + length(I2neg)
             con2 = getSecondBinCon(xIn,xOut[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+            assertSecondBinCon(xVal,yVal[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
             MOI.submit(m, MOI.UserCut(cb_data), con2)
             m.ext[:CUTS].count += 1
         end
@@ -225,7 +227,7 @@ end
 
 # Return first constraint with given I, I^+, I^-, tau, kappa as shown
 # in Proposition 3. An efficient implementation for user cuts.
-function getfirstBinCon(x::VarOrAff, yi::VarOrAff,
+function getFirstBinCon(x::VarOrAff, yi::VarOrAff,
                             Ipos::Array{Int64, 1},
                             Ineg::Array{Int64, 1},
                             lenI::Int64,
@@ -245,4 +247,27 @@ function getSecondBinCon(x::VarOrAff, yi::VarOrAff,
                             kappa::T) where {T <: Real}
     return @build_constraint((sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
                 <=(((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2))
+end
+
+
+function assertFirstBinCon(x, yi,
+                            Ipos::Array{Int64, 1},
+                            Ineg::Array{Int64, 1},
+                            lenI::Int64,
+                            nonzeroNum::Int64,
+                            tau::T) where {T <: Real}
+    @assert((sum(x[Ipos]) - sum(x[Ineg]))
+                    < (((lenI - nonzeroNum - tau) * (1 + yi) /2) - (1 - yi) * lenI/2 ))
+    return
+end
+
+function assertSecondBinCon(x, yi,
+                            Ipos::Array{Int64, 1},
+                            Ineg::Array{Int64, 1},
+                            lenI::Int64,
+                            nonzeroNum::Int64,
+                            kappa::T) where {T <: Real}
+    @assert((sum(x[Ipos]) - sum(x[Ineg]))
+                > (((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2))
+    return
 end

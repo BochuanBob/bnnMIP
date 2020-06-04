@@ -123,7 +123,7 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         uNew, lNew = uNewList[i], lNewList[i]
         con1Val, con2Val = decideViolationCons(xVal, yVal[i],nonzeroIndices,
                             wVec, tau, kappa, uNew,lNew)
-        if (con1Val > 0)
+        if (con1Val > 0.1)
             con1I = i
             wVec = weights[con1I, :]
             nonzeroIndices = nonzeroIndicesList[con1I]
@@ -133,10 +133,12 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                                     uNew,lNew)
             con1 = getFirstCon(xIn, xOut[con1I], I1,
                         nonzeroIndices, wVec, tau, uNew, lNew)
+            assertFirstCon(xVal, yVal[con1I], I1,
+                        nonzeroIndices, wVec, tau, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (con2Val > 0)
+        if (con2Val > 0.1)
             con2I = i
             wVec = weights[con2I, :]
             nonzeroIndices = nonzeroIndicesList[con2I]
@@ -144,7 +146,9 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
             uNew, lNew = uNewList[con2I], lNewList[con2I]
             I2 = getSecondCutIndices(xVal, yVal[con2I],nonzeroIndices,wVec,
                                     uNew,lNew)
-            con2 = getSecondCon(xIn, xOut[con2I], I2,
+            @show con2 = getSecondCon(xIn, xOut[con2I], I2,
+                        nonzeroIndices, wVec, kappa, uNew, lNew)
+            assertSecondCon(xVal, yVal[con2I], I2,
                         nonzeroIndices, wVec, kappa, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con2)
             m.ext[:CUTS].count += 1
@@ -251,4 +255,41 @@ function getSecondCon(x::VarOrAff, yi::VarOrAff,
                         (sum(w[i]*upper[i] for i in Iset) +
                         sum(w[i]*lower[i] for i in IsetC) + b) * (1 - yi)
                         )
+end
+
+
+function assertFirstCon(x, yi,
+                            Iset::Array{Int64, 1},
+                            nonzeroIndices::Array{Int64, 1},
+                            w::Array{V, 1},b::T,
+                            upper::Array{U, 1}, lower::Array{W, 1}
+                            ) where {V<:Real, U<:Real, W<:Real, T <: Real}
+    IsetC = setdiff(nonzeroIndices, Iset)
+    println(2 * (sum(w[Iset] .* x[Iset]) +
+                        sum(w[IsetC] .* upper[IsetC]) + b) -
+                        ((sum(w[Iset] .* lower[Iset]) +
+                        sum(w[IsetC] .* upper[IsetC]) + b) * (1 - yi) ))
+    @assert(2 * (sum(w[Iset] .* x[Iset]) +
+                        sum(w[IsetC] .* upper[IsetC]) + b) <
+                        (sum(w[Iset] .* lower[Iset]) +
+                        sum(w[IsetC] .* upper[IsetC]) + b) * (1 - yi)
+                        )
+    return
+end
+
+function assertSecondCon(x, yi,
+                            Iset::Array{Int64, 1},
+                            nonzeroIndices::Array{Int64, 1},
+                            w::Array{V, 1},b::T,
+                            upper::Array{U, 1}, lower::Array{W, 1}
+                            ) where {V<:Real, U<:Real, W<:Real, T <: Real}
+    IsetC = setdiff(nonzeroIndices, Iset)
+    println(2 * sum(w[Iset] .* (upper[Iset] - x[Iset])) -
+                        (sum(w[Iset] .* upper[Iset]) +
+                        sum(w[IsetC] .* lower[IsetC]) + b) * (1 - yi) )
+    @assert(2 * sum(w[Iset] .* (upper[Iset] - x[Iset])) <
+                        (sum(w[Iset] .* upper[Iset]) +
+                        sum(w[IsetC] .* lower[IsetC]) + b) * (1 - yi)
+                        )
+    return
 end
