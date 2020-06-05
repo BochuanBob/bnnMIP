@@ -7,14 +7,14 @@ include("utilities.jl")
 include("verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn2x200.mat", "nn")
+nn = readNN("../data/nn3Layers.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 10
-epsilonList = [0.01]
+epsilonList = [0.03]
 
-Random.seed!(1000)
+Random.seed!(2020)
 sampleIndex = rand(1:length(testLabels), num)
 trueIndices = testLabels[sampleIndex]
 targetIndices = Array{Int64, 1}(zeros(num))
@@ -22,7 +22,7 @@ for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
 timeLimit = 1800
-methodList = ["NoCuts", "DefaultCuts", "UserCuts", "AllCuts"]
+methodList = ["NoCuts", "DefaultCuts", "PreCut", "PreCutDefault"]
 
 # Ouputs
 totalLen = length(methodList)*length(epsilonList)*num
@@ -47,14 +47,13 @@ for epsilon in epsilonList
     for method in methodList
         for i in 1:num
             cuts = false
+            preCut = false
             if (method == "NoCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit))
-                cuts = false
+                                TimeLimit=timeLimit, PreCrush=1))
             elseif (method == "DefaultCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1,
-                                TimeLimit=timeLimit))
-                cuts = false
+                                TimeLimit=timeLimit, PreCrush=1))
             elseif (method == "AllCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1,
                                 TimeLimit=timeLimit, PreCrush=1))
@@ -62,6 +61,19 @@ for epsilon in epsilonList
             elseif (method == "UserCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
                                 TimeLimit=timeLimit, PreCrush=1))
+                cuts = true
+            elseif (method == "PreCut")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
+                                TimeLimit=timeLimit))
+                preCut = true
+            elseif (method == "PreCutDefault")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+                                TimeLimit=timeLimit))
+                preCut = true
+            elseif (method == "PreCutAll")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+                                TimeLimit=timeLimit))
+                preCut = true
                 cuts = true
             else
                 error("Not supported method.")
@@ -71,7 +83,7 @@ for epsilon in epsilonList
             targetIndex=targetIndices[i]
             x, xInt, y = perturbationVerify(m, nn, input, trueIndex,
                                     targetIndex, epsilon, cuts=cuts,
-                                    image=true, integer=false)
+                                    image=true, integer=false, preCut=preCut)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
             optimize!(m)
@@ -103,4 +115,4 @@ df = DataFrame(Samples=sampleIndexList, TrueIndices=trueIndexList,
             Epsilons=epsilonOut, RunTimes=runTimeOut, Objs=objsOut,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
             IterCount=itersOut, callbackTimes=callbackOut, submittedCuts=userCutsOut)
-CSV.write("results2x200.csv", df)
+CSV.write("results3Layers.csv", df)

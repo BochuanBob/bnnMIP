@@ -5,9 +5,10 @@ export perturbationVerify
 # Minimize the difference of outputs between true index and target index.
 function perturbationVerify(m::JuMP.Model, nn, input::Array,
                         trueIndex::Int64, targetIndex::Int64,
-                        epsilon::Float64; cuts=true, image=true, integer=false)
+                        epsilon::Float64; cuts=true, image=true,
+                        integer=false, preCut=false)
     # Don't want to change the original data.
-    nn = copy(nn)
+    nnCopy = deepcopy(nn)
     inputSize = nn[1]["inputSize"]
     x = Array{VariableRef}(undef, inputSize)
     xInt = Array{VariableRef}(undef, inputSize)
@@ -24,11 +25,12 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
     end
     dim = length(size(input))
     inputFlatten = permutedims(input, Array{Int64,1}(dim:-1:1))[:]
-    nn[2]["upper"] = ceil.(min.(nn[2]["upper"], inputFlatten .+ epsilon), digits=2)
-    nn[2]["lower"] = floor.(max.(nn[2]["lower"], inputFlatten .- epsilon), digits=2)
+    nnCopy[2]["upper"] = min.(nnCopy[2]["upper"], inputFlatten .+ epsilon)
+    nnCopy[2]["lower"] = max.(nnCopy[2]["lower"], inputFlatten .- epsilon)
+    println(nnCopy[2]["upper"] == nn[2]["upper"])
     @constraint(m, x .<= input .+ epsilon)
     @constraint(m, x .>= input .- epsilon)
-    y = getBNNoutput(m, nn, x, cuts=cuts, image=image)
+    y = getBNNoutput(m, nnCopy, x, cuts=cuts, image=image, preCut=preCut)
     @objective(m, Min, y[trueIndex] - y[targetIndex])
     return x, xInt, y
 end
@@ -62,7 +64,7 @@ end
 # Find the minimal epsilon such that nn(x_0) \neq nn(x_1)
 # for ||x_0 - x_1||_infty < epsilon. x_0 is the test data.
 function falsePredictVerify(m::JuMP.Model, nn, input::Array, trueIndex::Int64;
-                            cuts=true)
+                            cuts=true, preCut=true)
     inputSize = nn[1]["inputSize"]
     x = Array{VariableRef}(undef, inputSize)
     for idx in eachindex(x)
@@ -71,7 +73,7 @@ function falsePredictVerify(m::JuMP.Model, nn, input::Array, trueIndex::Int64;
     epsilon = @variable(m, lower_bound=0)
     @constraint(m, x .<= input + epsilon)
     @constraint(m, x .>= input - epsilon)
-    y = getBNNoutput(m, nn, x, cuts=cuts)
+    y = getBNNoutput(m, nn, x, cuts=cuts, preCut=preCut)
     yLen= length(y)
     z = @variable(m)
     zz = @variable(m, [1:yLen], binary=true)

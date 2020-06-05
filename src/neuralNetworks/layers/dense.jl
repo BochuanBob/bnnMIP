@@ -7,7 +7,7 @@ export dense, addDenseCons!
 function dense(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1},
                upper::Array{V, 1}, lower::Array{W, 1};
-               actFunc="", image=true
+               actFunc="", image=true, preCut=true
                ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     initNN!(m)
     count = m.ext[:NN].count
@@ -33,7 +33,7 @@ function dense(m::JuMP.Model, x::VarOrAff,
             tauList[i], kappaList[i], nonzeroIndicesList[i],
                 uNewList[i], lNewList[i] = neuronDenseSign(m, x, y[i],
                 weights[i, :], bias[i],
-                upper, lower, image=image)
+                upper, lower, image=image, preCut=preCut)
         end
     elseif (actFunc == "")
         y = @variable(m, [1:yLen],
@@ -49,7 +49,7 @@ end
 # A MIP formulation for a single neuron.
 function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 wVec::Array{T, 1}, b::U,
-                upper::Array{V, 1}, lower::Array{W, 1}; image=true
+                upper::Array{V, 1}, lower::Array{W, 1}; image=true, preCut=true
                 ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     # initNN!(m)
     posIndices = findall(wVec .> 0)
@@ -73,16 +73,22 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         tau, kappa= b, b
     end
     uNew, lNew = transformProc(negIndices, upper, lower)
-    Iset = union(posIndices, negIndices)
-    IsetC = setdiff(nonzeroIndices, Iset)
-    w = wVec
-    @constraint(m, 2 * (sum(w[i]*x[i] for i in Iset) +
-                        sum(w[i] * uNew[i] for i in IsetC) + tau) >=
-                        ((sum(w[i]*lNew[i] for i in Iset) +
-                        sum(w[i] * uNew[i] for i in IsetC) + tau) * (1 - yi)) )
-    @constraint(m, 2 * sum(w[i]*(uNew[i] - x[i]) for i in Iset) >=
-                        ((sum(w[i]*uNew[i] for i in Iset) +
-                        sum(w[i]*lNew[i] for i in IsetC) + kappa) * (1 - yi)) )
+    if (preCut && (nonzeroNum <= -1) )
+        IsetAll = collect(powerset(nonzeroIndices))
+    else
+        IsetAll = [union(posIndices, negIndices)]
+    end
+    for Iset in IsetAll
+        IsetC = setdiff(nonzeroIndices, Iset)
+        w = wVec
+        @constraint(m, 2 * (sum(w[i]*x[i] for i in Iset) +
+                            sum(w[i] * uNew[i] for i in IsetC) + tau) >=
+                            ((sum(w[i]*lNew[i] for i in Iset) +
+                            sum(w[i] * uNew[i] for i in IsetC) + tau) * (1 - yi)) )
+        @constraint(m, 2 * sum(w[i]*(uNew[i] - x[i]) for i in Iset) >=
+                            ((sum(w[i]*uNew[i] for i in Iset) +
+                            sum(w[i]*lNew[i] for i in IsetC) + kappa) * (1 - yi)) )
+    end
     return tau, kappa, nonzeroIndices, uNew, lNew
 end
 
@@ -107,23 +113,26 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     yVal = zeros(yLen)
     for i in 1:yLen
         yVal[i] = aff_callback_value(cb_data, xOut[i])
-        if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
-        # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
-            # continue
-        else
-            contFlag = false
-        end
+        # if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
+        # # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
+        #     # continue
+        # else
+        #     contFlag = false
+        # end
         wVec = weights[i, :]
         nonzeroIndices = nonzeroIndicesList[i]
         nonzeroNum = length(nonzeroIndices)
         if (nonzeroNum == 0)
             continue
         end
+        # if (nonzeroNum > 16)
+        #     continue
+        # end
         tau, kappa = tauList[i], kappaList[i]
         uNew, lNew = uNewList[i], lNewList[i]
         con1Val, con2Val = decideViolationCons(xVal, yVal[i],nonzeroIndices,
                             wVec, tau, kappa, uNew,lNew)
-        if (con1Val > 0.1)
+        if (con1Val > 0.01)
             con1I = i
             wVec = weights[con1I, :]
             nonzeroIndices = nonzeroIndicesList[con1I]
@@ -133,12 +142,12 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                                     uNew,lNew)
             con1 = getFirstCon(xIn, xOut[con1I], I1,
                         nonzeroIndices, wVec, tau, uNew, lNew)
-            assertFirstCon(xVal, yVal[con1I], I1,
-                        nonzeroIndices, wVec, tau, uNew, lNew)
+            # assertFirstCon(xVal, yVal[con1I], I1,
+            #             nonzeroIndices, wVec, tau, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (con2Val > 0.1)
+        if (con2Val > 0.01)
             con2I = i
             wVec = weights[con2I, :]
             nonzeroIndices = nonzeroIndicesList[con2I]
@@ -148,8 +157,8 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                                     uNew,lNew)
             con2 = getSecondCon(xIn, xOut[con2I], I2,
                         nonzeroIndices, wVec, kappa, uNew, lNew)
-            assertSecondCon(xVal, yVal[con2I], I2,
-                        nonzeroIndices, wVec, kappa, uNew, lNew)
+            # assertSecondCon(xVal, yVal[con2I], I2,
+            #             nonzeroIndices, wVec, kappa, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con2)
             m.ext[:CUTS].count += 1
         end

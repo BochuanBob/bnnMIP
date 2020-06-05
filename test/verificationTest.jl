@@ -7,48 +7,78 @@ include("../src/utilities.jl")
 include("../src/verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn2x100.mat", "nn")
+nn = readNN("../data/nn3x100.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 10
-epsilonList = [0.01]
+epsilonList = [0.02]
 
-Random.seed!(1000)
+Random.seed!(2020)
+nn[3]["weights"] = keepOnlyKEntries(nn[3]["weights"], 5)
+# nn[3]["weights"] = keepOnlyKEntriesSeq(nn[3]["weights"], 20)
+# nn[4]["weights"] = keepOnlyKEntriesSeq(nn[4]["weights"], 20)
+# nn[5]["weights"] = keepOnlyKEntries(nn[5]["weights"], 20)
+# nn[6]["weights"] = keepOnlyKEntriesSeq(nn[6]["weights"], 20)
+println(length(findall(nn[2]["weights"] .!= 0)))
+println(length(findall(nn[3]["weights"] .!= 0)))
 sampleIndex = rand(1:length(testLabels), num)
 trueIndices = testLabels[sampleIndex]
 targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 100
+timeLimit = 2000
 
 for epsilon in epsilonList
-    for method in ["NoCuts"]
-        for i in [1]
+    for method in ["DefaultCuts"]
+        for i in 1
             cuts = false
+            preCut = false
             if (method == "NoCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit))
-                cuts = false
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
+                                TimeLimit=timeLimit, Threads=4))
             elseif (method == "DefaultCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1,
-                                TimeLimit=timeLimit))
-                cuts = false
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+                                TimeLimit=timeLimit, Threads=4))
             elseif (method == "AllCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
-                                Cuts=0, TimeLimit=timeLimit, Method=1))
-                # set_optimizer_attribute(m, "CutPasses", 100000000)
+                                Cuts=0, TimeLimit=timeLimit, Threads=4))
+                # set_optimizer_attribute(m, "CutPasses", 20000)
                 # , MIRCuts=1,
                 # ModKCuts=1,NetworkCuts=1,ProjImpliedCuts=1,
                 # StrongCGCuts=1
                 cuts = true
+            elseif (method == "UserCuts")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1))
+                cuts = true
+            elseif (method == "PreCut")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
+                                TimeLimit=timeLimit, Threads=4))
+                preCut = true
+            elseif (method == "PreCutDefault")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+                                TimeLimit=timeLimit, Threads=4))
+                preCut = true
+            elseif (method == "PreCutAll")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+                                TimeLimit=timeLimit, Threads=4))
+                preCut = true
+                cuts = true
+            elseif (method == "PreCutUser")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
+                                TimeLimit=timeLimit, Threads=4))
+                preCut = true
+                cuts = true
             end
+
             input=testImages[sampleIndex[i],:,:,:]
             trueIndex=trueIndices[i]
             targetIndex=targetIndices[i]
             x, xInt, y = perturbationVerify(m, nn, input, trueIndex,
-                                    targetIndex, epsilon, cuts=cuts, image=true)
+                                    targetIndex, epsilon, cuts=cuts,
+                                    image=true, preCut=preCut)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
             optimize!(m)

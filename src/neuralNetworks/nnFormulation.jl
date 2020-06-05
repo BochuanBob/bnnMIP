@@ -5,14 +5,15 @@ export getBNNoutput
 # Add constraints such that y = NN(x).
 # If cuts == false, it is a Big-M formulation.
 # Otherwise, cuts for the ideal formulation are added to the model.
-function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
+function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
+            image=true, preCut=true)
     global callbackTimeTotal = 0.0
     initNN!(m)
     count = m.ext[:NN].count
     m.ext[:NN].count += 1
     nnLen = length(nn)
     # Don't want to change the original data.
-    nn = copy(nn)
+    nn = deepcopy(nn)
     xIn = x
     xOut = nothing
     xOnes = false
@@ -31,7 +32,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
             # has entries of -1 and 1.
             xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
-                        takeSign=takeSign, image=image)
+                        takeSign=takeSign, image=image, preCut=preCut)
             nn[i]["tauList"] = tauList
             nn[i]["kappaList"] = kappaList
             nn[i]["oneIndicesList"] = oneIndicesList
@@ -48,7 +49,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
                         uNewList, lNewList =
                         dense(m, xIn, nn[i]["weights"], nn[i]["bias"],
                         nn[i]["upper"], nn[i]["lower"],
-                        actFunc=actFunc, image=image)
+                        actFunc=actFunc, image=image, preCut=preCut)
             nn[i]["tauList"] = tauList
             nn[i]["kappaList"] = kappaList
             nn[i]["nonzeroIndicesList"] = nonzeroIndicesList
@@ -79,15 +80,15 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true, image=true)
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
             iter += 1
-            if (iter > 100 && mod(iter, 1000) != 1)
+            if (iter>100 && mod(iter, 1000) != 1)
                 return
             end
             callbackTime = @elapsed begin
                 flag = true
                 for i in 1:nnLen
-                    if (~flag)
-                        break
-                    end
+                    # if (~flag)
+                    #     break
+                    # end
                     if (nn[i]["type"] == "denseBin" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]

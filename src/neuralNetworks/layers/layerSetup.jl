@@ -1,7 +1,7 @@
 using JuMP
 const VarOrAff = Union{JuMP.VariableRef,JuMP.AffExpr,
                         Array{VariableRef}, Array{AffExpr}}
-
+using Combinatorics, IterTools
 export initNN!, aff_callback_value
 
 mutable struct nnData
