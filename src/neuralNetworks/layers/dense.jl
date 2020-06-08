@@ -189,7 +189,7 @@ end
 function decideViolationCons(xVal::Array{R1, 1}, yVal::R2,
                         nonzeroIndices::Array{Int64, 1},
                         w::Array{R3, 1}, tau::R4, kappa::R5,
-                        upper::Array{R6, 1}, lower::Array{R7, 1}; tol = 0
+                        upper::Array{R6, 1}, lower::Array{R7, 1}
                         ) where {R1<:Real, R2<:Real, R3<:Real, R4<:Real,
                         R5<:Real, R6<:Real, R7<:Real}
     # Initially, I = []

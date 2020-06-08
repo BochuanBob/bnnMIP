@@ -134,7 +134,7 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
             continue
         end
         con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
-                        negOneIndices, nonzeroNum, tau, kappa)
+                        negOneIndices, tau, kappa)
         if (con1Val > 0.01)
             con1I = i
             oneIndices = oneIndicesList[con1I]
@@ -170,9 +170,9 @@ end
 function decideViolationConsBin(xVal::Array{R1, 1}, yVal::R2,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1},
-                        nonzeroNum::Int64,
                         tau::R3, kappa::R4) where {R1<:Real, R2<:Real,
                         R3<:Real, R4<:Real}
+    nonzeroNum = length(oneIndices) + length(negOneIndices)
     # Initially, I = []
     con1Val = (nonzeroNum + tau) * (1+yVal) / 2
     con2Val = (kappa - nonzeroNum) * (1-yVal) / 2
