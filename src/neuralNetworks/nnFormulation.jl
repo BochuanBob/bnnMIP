@@ -58,15 +58,19 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
             nn[i]["takeSign"] = (actFunc=="Sign")
             nn[i]["xIn"] = xIn
             nn[i]["xOut"] = xOut
-        elseif (nn[i]["type"] == "denseBinImage")
-            actFunc = ""
-            if (haskey(nn[i], "activation"))
-                actFunc = nn[i]["activation"]
-            end
-            xxIn, xOut = denseBinImage(m, xIn, nn[i]["weights"], nn[i]["bias"],
-                        takeSign=(actFunc=="Sign"))
-            nn[i]["takeSign"] = (actFunc=="Sign")
-            nn[i]["xIn"] = xxIn
+        elseif (nn[i]["type"] == "conv2dSign")
+            strides = NTuple{2, Int64}(nn[i]["strides"])
+            xOut, tauList, kappaList, nonzeroIndicesList,
+                        uNewList, lNewList =
+                        conv2dSign(m, xIn, nn[i]["weights"], nn[i]["bias"],
+                        strides, nn[i]["upper"], nn[i]["lower"],
+                        padding=nn[i]["padding"], image=image, preCut=preCut)
+            nn[i]["tauList"] = tauList
+            nn[i]["kappaList"] = kappaList
+            nn[i]["nonzeroIndicesList"] = nonzeroIndicesList
+            nn[i]["uNewList"] = uNewList
+            nn[i]["lNewList"] = lNewList
+            nn[i]["xIn"] = xIn
             nn[i]["xOut"] = xOut
         else
             error("Not support layer.")

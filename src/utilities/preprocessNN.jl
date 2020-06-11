@@ -15,10 +15,10 @@ function preprocNN(nn)
         elseif (haskey(nn[i], "bias"))
             nn[i]["bias"] = Float64.(nn[i]["bias"][:])
         end
-        if (haskey(nn[i], "upper"))
+        if (haskey(nn[i], "upper") && nn[i]["type"] == "dense")
             nn[i]["upper"] = Float64.(nn[i]["upper"][:])
         end
-        if (haskey(nn[i], "lower"))
+        if (haskey(nn[i], "lower") && nn[i]["type"] == "dense")
             nn[i]["lower"] = Float64.(nn[i]["lower"][:])
         end
     end

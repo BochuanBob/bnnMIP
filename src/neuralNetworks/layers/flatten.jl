@@ -8,7 +8,7 @@ function flatten(m::JuMP.Model, x::VarOrAff; order="C")
     if (order == "C")
         dim = length(size(x))
         return permutedims(x, Array{Int64,1}(dim:-1:1))[:]
-    elseif (order = "F")
+    elseif (order == "F")
         return x[:]
     end
     error("Not supported flatten function!")

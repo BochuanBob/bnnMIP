@@ -23,11 +23,19 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
             @constraint(m, 255 * x[idx] == xInt[idx])
         end
     end
-    dim = length(size(input))
-    inputFlatten = permutedims(input, Array{Int64,1}(dim:-1:1))[:]
-    nnCopy[2]["upper"] = min.(nnCopy[2]["upper"], inputFlatten .+ epsilon)
-    nnCopy[2]["lower"] = max.(nnCopy[2]["lower"], inputFlatten .- epsilon)
-    println(nnCopy[2]["upper"] == nn[2]["upper"])
+    for i in 1:length(nnCopy)
+        if (haskey(nnCopy[i], "upper") && nnCopy[i]["type"] == "dense")
+            dim = length(size(input))
+            inputFlatten = permutedims(input, Array{Int64,1}(dim:-1:1))[:]
+            nnCopy[i]["upper"] = min.(nnCopy[i]["upper"], inputFlatten .+ epsilon)
+            nnCopy[i]["lower"] = max.(nnCopy[i]["lower"], inputFlatten .- epsilon)
+            break
+        elseif (haskey(nnCopy[i], "upper") && nnCopy[i]["type"] == "conv2dSign")
+            nnCopy[i]["upper"] = min.(nnCopy[i]["upper"], input .+ epsilon)
+            nnCopy[i]["lower"] = max.(nnCopy[i]["lower"], input .- epsilon)
+            break
+        end
+    end
     @constraint(m, x .<= input .+ epsilon)
     @constraint(m, x .>= input .- epsilon)
     y = getBNNoutput(m, nnCopy, x, cuts=cuts, image=image, preCut=preCut)
@@ -35,8 +43,10 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
     return x, xInt, y
 end
 
+
 # Find the minimum epsilon such that nn(x_1) = targetIndex
 # for ||x_0 - x_1||_infty < epsilon. x_0 is the test data.
+# TODO: Need to modify later.
 function targetVerify(m::JuMP.Model, nn, input::Array,
                         targetIndex::Int64; cuts=true, integer=true)
     inputSize = nn[1]["inputSize"]
@@ -61,8 +71,10 @@ function targetVerify(m::JuMP.Model, nn, input::Array,
     return x, xInt, y
 end
 
+
 # Find the minimal epsilon such that nn(x_0) \neq nn(x_1)
 # for ||x_0 - x_1||_infty < epsilon. x_0 is the test data.
+# TODO: Need to modify later.
 function falsePredictVerify(m::JuMP.Model, nn, input::Array, trueIndex::Int64;
                             cuts=true, preCut=true)
     inputSize = nn[1]["inputSize"]
