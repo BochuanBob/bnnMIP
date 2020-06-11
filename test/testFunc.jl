@@ -1,4 +1,4 @@
-export forwardProp, signFun, forwardPropInt, keepOnlyKEntries
+export forwardProp, signFun, forwardPropInt, keepOnlyKEntries, keepOnlyKEntriesSeq
 using Random
 # Keep random k entries per row in a matrix and set all the others to 0.
 function keepOnlyKEntries(mat, k::Int64)
