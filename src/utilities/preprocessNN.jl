@@ -13,7 +13,11 @@ function preprocNN(nn)
             weights = nn[i]["weights"]
             nn[i]["bias"] = zeros(size(weights)[1])
         elseif (haskey(nn[i], "bias"))
-            nn[i]["bias"] = Float64.(nn[i]["bias"][:])
+            if (size(nn[i]["bias"]) == ())
+                nn[i]["bias"] = [Float64(nn[i]["bias"])]
+            else
+                nn[i]["bias"] = Float64.(nn[i]["bias"][:])
+            end
         end
         if (haskey(nn[i], "upper") && nn[i]["type"] == "dense")
             nn[i]["upper"] = Float64.(nn[i]["upper"][:])

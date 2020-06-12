@@ -72,6 +72,20 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
             nn[i]["lNewList"] = lNewList
             nn[i]["xIn"] = xIn
             nn[i]["xOut"] = xOut
+        elseif (nn[i]["type"] == "conv2dBinSign")
+            # After the first sign() function, the input of each binary layer
+            # has entries of -1 and 1.
+            strides = NTuple{2, Int64}(nn[i]["strides"])
+            xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
+                        conv2dBinSign(m, xIn, nn[i]["weights"], nn[i]["bias"],
+                        strides, padding=nn[i]["padding"],
+                        image=image, preCut=preCut)
+            nn[i]["tauList"] = tauList
+            nn[i]["kappaList"] = kappaList
+            nn[i]["oneIndicesList"] = oneIndicesList
+            nn[i]["negOneIndicesList"] = negOneIndicesList
+            nn[i]["xIn"] = xIn
+            nn[i]["xOut"] = xOut
         else
             error("Not support layer.")
         end

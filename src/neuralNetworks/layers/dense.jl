@@ -16,10 +16,10 @@ function dense(m::JuMP.Model, x::VarOrAff,
     if (length(bias) != yLen)
         error("The sizes of weights and bias don't match!")
     end
-    if (~image)
-        @constraint(m, x .<= upper)
-        @constraint(m, x .>= lower)
-    end
+
+    @constraint(m, x .<= upper)
+    @constraint(m, x .>= lower)
+
     tauList = zeros(yLen)
     kappaList = zeros(yLen)
     nonzeroIndicesList = Array{Array{Int64, 1}, 1}(undef, yLen)
@@ -73,8 +73,9 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         tau, kappa= b, b
     end
     uNew, lNew = transformProc(negIndices, upper, lower)
-    if (preCut && (nonzeroNum <= -1) )
+    if (preCut && (nonzeroNum <= 5) )
         IsetAll = collect(powerset(nonzeroIndices))
+        IsetAll = IsetAll[2:length(IsetAll)]
     else
         IsetAll = [union(posIndices, negIndices)]
     end
@@ -171,17 +172,11 @@ end
 # A transformation for Fourier-Motzkin procedure.
 function transformProc(negIndices::Array{Int64, 1},
             upper::Array{T, 1}, lower::Array{U, 1}) where {T<:Real, U<:Real}
-    uLen = length(upper)
-    upperNew = zeros(uLen)
-    lowerNew = zeros(uLen)
-    for i in 1:uLen
-        if (i in negIndices)
-            upperNew[i] = lower[i]
-            lowerNew[i] = upper[i]
-        else
-            upperNew[i] = upper[i]
-            lowerNew[i] = lower[i]
-        end
+    upperNew = deepcopy(upper)
+    lowerNew = deepcopy(lower)
+    for i in negIndices
+        upperNew[i] = lower[i]
+        lowerNew[i] = upper[i]
     end
     return upperNew, lowerNew
 end

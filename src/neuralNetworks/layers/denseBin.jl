@@ -41,16 +41,6 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     return y, tauList, kappaList, oneIndicesList, negOneIndicesList
 end
 
-# Checking each entry of weights must be in -1, 0, 1.
-function checkWeights(weights::Array{T, 2}) where{T <: Real}
-    for weight in weights
-        if (~(weight in [-1, 0, 1]))
-            return false
-        end
-    end
-    return true
-end
-
 # A MIP formulation for a single neuron.
 function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 weightVec::Array{T, 1}, b::U;
@@ -84,6 +74,7 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     end
     if (preCut && (nonzeroNum <= 6) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
+        IsetAll = IsetAll[2:length(IsetAll)]
     else
         IsetAll = [union(oneIndices, negOneIndices)]
     end

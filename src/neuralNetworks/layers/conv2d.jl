@@ -1,10 +1,7 @@
 include("layerSetup.jl")
 include("activation.jl")
 include("denseSetup.jl")
-export conv2dSign, addDenseCons!
-
-const EMPTY3DVAR = Array{VariableRef, 3}(undef, (0,0,0))
-const EMPTY3DFLOAT = Array{Float64, 3}(undef, (0,0,0))
+export conv2dSign
 
 # The MIP formulation for general conv2d layer
 function conv2dSign(m::JuMP.Model, x::VarOrAff,
@@ -16,6 +13,8 @@ function conv2dSign(m::JuMP.Model, x::VarOrAff,
     initNN!(m)
     count = m.ext[:NN].count
     m.ext[:NN].count += 1
+    EMPTY3DVAR = Array{VariableRef, 3}(undef, (0,0,0))
+    EMPTY3DFLOAT = Array{Float64, 3}(undef, (0,0,0))
     (k1Len, k2Len, channels, filters) = size(weights)
     (s1Len, s2Len) = strides
     (x1Len, x2Len, x3Len) = size(x)
@@ -48,7 +47,6 @@ function conv2dSign(m::JuMP.Model, x::VarOrAff,
     z = @variable(m, [1:y1Len, 1:y2Len, 1:y3Len], binary=true,
                 base_name="z_$count")
     y = @expression(m, 2 .* z .- 1)
-    println("y: ", size(y))
     for i in 1:y1Len
         for j in 1:y2Len
             for k in 1:y3Len
@@ -124,7 +122,7 @@ function neuronConv2dSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
 end
 
 
-# A transformation for Fourier-Motzkin procedure.
+# A transformation on bounds for Fourier-Motzkin procedure.
 function transformProc(negIndices::Array{CartesianIndex{3}, 1},
             upper::Array{T, 3}, lower::Array{U, 3}) where {T<:Real, U<:Real}
     upperNew = deepcopy(upper)

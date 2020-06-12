@@ -1,4 +1,15 @@
-export getTauAndKappa, getTauAndKappaInt, getTauAndKappaFloat
+export getTauAndKappa, getTauAndKappaInt, getTauAndKappaFloat, checkWeights
+
+# Checking each entry of weights must be in -1, 0, 1.
+function checkWeights(weights::Array{T, N}) where{T <: Real, N}
+    for weight in weights
+        if (~(weight in [-1, 0, 1]))
+            return false
+        end
+    end
+    return true
+end
+
 # When w^T x + kappa <= 0, sign(w^T x + b) = -1.
 # When w^T x + tau >= 0, sign(w^T x + b) = 1.
 # Each entry of w must be in -1, 0, 1.
