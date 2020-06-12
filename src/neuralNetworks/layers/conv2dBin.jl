@@ -67,16 +67,6 @@ function conv2dBinSign(m::JuMP.Model, x::VarOrAff,
     return y, tauList, kappaList, oneIndicesList, negOneIndicesList
 end
 
-# Checking each entry of weights must be in -1, 0, 1.
-function checkWeights(weights::Array{T, 2}) where{T <: Real}
-    for weight in weights
-        if (~(weight in [-1, 0, 1]))
-            return false
-        end
-    end
-    return true
-end
-
 # A MIP formulation for a single neuron.
 function neuronSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
                 weightVec::Array{T, 3}, b::U;
