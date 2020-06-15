@@ -107,58 +107,38 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         xVal[j] = JuMP.callback_value(cb_data, xIn[j])
     end
     contFlag = true
-    con1I = -1
-    con2I = -1
-    con1ValMax = 0
-    con2ValMax = 0
     yVal = zeros(yLen)
     for i in 1:yLen
         yVal[i] = aff_callback_value(cb_data, xOut[i])
-        # if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
-        # # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
-        #     # continue
-        # else
-        #     contFlag = false
-        # end
         wVec = weights[i, :]
         nonzeroIndices = nonzeroIndicesList[i]
         nonzeroNum = length(nonzeroIndices)
         if (nonzeroNum == 0)
             continue
         end
-        # if (nonzeroNum > 16)
-        #     continue
-        # end
+        if (nonzeroNum > 10)
+            continue
+        end
         tau, kappa = tauList[i], kappaList[i]
         uNew, lNew = uNewList[i], lNewList[i]
         con1Val, con2Val = decideViolationCons(xVal, yVal[i],nonzeroIndices,
                             wVec, tau, kappa, uNew,lNew)
         if (con1Val > 0.01)
-            con1I = i
-            wVec = weights[con1I, :]
-            nonzeroIndices = nonzeroIndicesList[con1I]
-            tau = tauList[con1I]
-            uNew, lNew = uNewList[con1I], lNewList[con1I]
-            I1 = getFirstCutIndices(xVal, yVal[con1I],nonzeroIndices,wVec,
+            I1 = getFirstCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew)
-            con1 = getFirstCon(xIn, xOut[con1I], I1,
+            con1 = getFirstCon(xIn, xOut[i], I1,
                         nonzeroIndices, wVec, tau, uNew, lNew)
-            # assertFirstCon(xVal, yVal[con1I], I1,
+            # assertFirstCon(xVal, yVal[i], I1,
             #             nonzeroIndices, wVec, tau, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
         if (con2Val > 0.01)
-            con2I = i
-            wVec = weights[con2I, :]
-            nonzeroIndices = nonzeroIndicesList[con2I]
-            kappa = kappaList[con2I]
-            uNew, lNew = uNewList[con2I], lNewList[con2I]
-            I2 = getSecondCutIndices(xVal, yVal[con2I],nonzeroIndices,wVec,
+            I2 = getSecondCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew)
-            con2 = getSecondCon(xIn, xOut[con2I], I2,
+            con2 = getSecondCon(xIn, xOut[i], I2,
                         nonzeroIndices, wVec, kappa, uNew, lNew)
-            # assertSecondCon(xVal, yVal[con2I], I2,
+            # assertSecondCon(xVal, yVal[i], I2,
             #             nonzeroIndices, wVec, kappa, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con2)
             m.ext[:CUTS].count += 1

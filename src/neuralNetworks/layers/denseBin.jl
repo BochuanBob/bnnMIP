@@ -2,12 +2,15 @@ include("layerSetup.jl")
 include("denseSetup.jl")
 export denseBin, addDenseBinCons!
 
+const CUTOFF_DENSE_BIN = 10
+
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1};
-               takeSign=false, image=true, preCut=true) where{T<:Real, U<:Real}
+               takeSign=false, image=true, preCut=true,
+               cuts=true) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -24,13 +27,13 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     negOneIndicesList = Array{Array{Int64, 1}, 1}(undef, yLen)
     y = nothing
     if (takeSign)
-        z = @variable(m, [1:yLen], binary=true,
+        z = @variable(m, [1:yLen], upper_bound=1, lower_bound=0,# binary=true,
                     base_name="z_$count")
         y = @expression(m, 2 .* z .- 1)
         for i in 1:yLen
             tauList[i], kappaList[i], oneIndicesList[i], negOneIndicesList[i] =
                 neuronSign(m, x, y[i], weights[i, :], bias[i],
-                        image=image, preCut=preCut)
+                        image=image, preCut=preCut, cuts=cuts)
         end
     else
         y = @variable(m, [1:yLen],
@@ -44,7 +47,7 @@ end
 # A MIP formulation for a single neuron.
 function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 weightVec::Array{T, 1}, b::U;
-                image=true, preCut=true) where{T<:Real, U<:Real}
+                image=true, preCut=true, cuts=true) where{T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
@@ -77,6 +80,10 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         IsetAll = IsetAll[2:length(IsetAll)]
     else
         IsetAll = [union(oneIndices, negOneIndices)]
+        if (nonzeroNum > CUTOFF_DENSE_BIN || ~cuts)
+            z = @variable(m, binary=true)
+            @constraint(m, yi == 2 * z - 1)
+        end
     end
     for Iset1 in IsetAll
         Ipos = intersect(Iset1, oneIndices)
@@ -100,58 +107,38 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     for j in 1:xLen
         xVal[j] = aff_callback_value(cb_data, xIn[j])
     end
-    con1I = -1
-    con2I = -1
-    con1ValMax = 0
-    con2ValMax = 0
     contFlag = true
     yVal = zeros(yLen)
     for i in 1:yLen
         yVal[i] = aff_callback_value(cb_data, xOut[i])
-        # if (abs(yVal[i] - 1) < 10^(-10) || abs(yVal[i] + 1) < 10^(-10))
-        # # if (-1 + 10^(-8) < yVal[i] < 1 - 10^(-8))
-        #     # continue
-        # else
-        #     contFlag = false
-        # end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
-        # if (nonzeroNum > 10)
-        #     continue
-        # end
+        if (nonzeroNum > CUTOFF_DENSE_BIN)
+            continue
+        end
         tau, kappa = tauList[i], kappaList[i]
         if (nonzeroNum == 0 || tau >= nonzeroNum || kappa <= -nonzeroNum)
             continue
         end
         con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, tau, kappa)
-        if (con1Val > 0.01)
-            con1I = i
-            oneIndices = oneIndicesList[con1I]
-            negOneIndices = negOneIndicesList[con1I]
-            tau = tauList[con1I]
-            nonzeroNum = length(oneIndices) + length(negOneIndices)
-            I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[con1I],
+        if (con1Val > 10^(-6))
+            I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices)
             lenI1 = length(I1pos) + length(I1neg)
-            con1 = getFirstBinCon(xIn,xOut[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
-            # assertFirstBinCon(xVal,yVal[con1I],I1pos,I1neg,lenI1,nonzeroNum,tau)
-            MOI.submit(m, MOI.UserCut(cb_data), con1)
+            con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            MOI.submit(m, MOI.LazyConstraint(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (con2Val > 0.01)
-            con2I = i
-            oneIndices = oneIndicesList[con2I]
-            negOneIndices = negOneIndicesList[con2I]
-            kappa = kappaList[con2I]
-            nonzeroNum = length(oneIndices) + length(negOneIndices)
-            I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[con2I],
+        if (con2Val > 10^(-6))
+            I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices)
             lenI2 = length(I2pos) + length(I2neg)
-            con2 = getSecondBinCon(xIn,xOut[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-            # assertSecondBinCon(xVal,yVal[con2I],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-            MOI.submit(m, MOI.UserCut(cb_data), con2)
+            con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+            # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+            MOI.submit(m, MOI.LazyConstraint(cb_data), con2)
             m.ext[:CUTS].count += 1
         end
     end

@@ -32,7 +32,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
             # has entries of -1 and 1.
             xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         denseBin(m, xIn, nn[i]["weights"], nn[i]["bias"],
-                        takeSign=takeSign, image=image, preCut=preCut)
+                        takeSign=takeSign, image=image, preCut=preCut,cuts=cuts)
             nn[i]["tauList"] = tauList
             nn[i]["kappaList"] = kappaList
             nn[i]["oneIndicesList"] = oneIndicesList
@@ -79,7 +79,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
             xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         conv2dBinSign(m, xIn, nn[i]["weights"], nn[i]["bias"],
                         strides, padding=nn[i]["padding"],
-                        image=image, preCut=preCut)
+                        image=image, preCut=preCut,cuts=cuts)
             nn[i]["tauList"] = tauList
             nn[i]["kappaList"] = kappaList
             nn[i]["oneIndicesList"] = oneIndicesList
@@ -94,13 +94,8 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
     y = xOut
     # Whether submit the cuts to Gurobi.
     if (cuts)
-        global iter = 0
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            iter += 1
-            if (iter>100 && mod(iter, 1000) != 1)
-                return
-            end
             callbackTime = @elapsed begin
                 flag = true
                 for i in 1:nnLen
@@ -115,7 +110,31 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
                                             nn[i]["oneIndicesList"],
                                             nn[i]["negOneIndicesList"],
                                             cb_data)
-                    elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
+                    elseif (nn[i]["type"] == "conv2dBinSign")
+                        xIn = nn[i]["xIn"]
+                        xOut = nn[i]["xOut"]
+                        strides = NTuple{2, Int64}(nn[i]["strides"])
+                        flag = addConv2dBinCons!(m, xIn, xOut, nn[i]["tauList"],
+                                            nn[i]["kappaList"],
+                                            nn[i]["oneIndicesList"],
+                                            nn[i]["negOneIndicesList"],
+                                            nn[i]["weights"], strides,
+                                            cb_data)
+                    end
+                end
+            end
+            callbackTimeTotal += callbackTime
+        end
+        global userIter = 0
+        function callbackUserCutsBNN(cb_data)
+            userIter += 1
+            if (userIter>100 && mod(userIter, 10) != 1)
+                return
+            end
+            callbackTime = @elapsed begin
+                flag = true
+                for i in 1:nnLen
+                    if (nn[i]["type"] == "dense" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
                         flag = addDenseCons!(m, xIn, xOut, nn[i]["weights"],
@@ -123,17 +142,22 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
                                         nn[i]["nonzeroIndicesList"],
                                         nn[i]["uNewList"], nn[i]["lNewList"],
                                         cb_data, image=image)
-                    elseif (nn[i]["type"] == "denseBinImage" && nn[i]["takeSign"])
+                    elseif (nn[i]["type"] == "conv2dSign")
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
-                        flag = addDenseBinImageCons!(m, xIn, xOut, nn[i]["weights"],
-                                                nn[i]["bias"], cb_data)
+                        strides = NTuple{2, Int64}(nn[i]["strides"])
+                        flag = addConv2dCons!(m, xIn, xOut, nn[i]["weights"],
+                                        nn[i]["tauList"], nn[i]["kappaList"],
+                                        nn[i]["nonzeroIndicesList"],
+                                        nn[i]["uNewList"], nn[i]["lNewList"],
+                                        strides, cb_data, image=image)
                     end
                 end
             end
             callbackTimeTotal += callbackTime
         end
-        MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
+        MOI.set(m, MOI.LazyConstraintCallback(), callbackCutsBNN)
+        MOI.set(m, MOI.UserCutCallback(), callbackUserCutsBNN)
     else
         function callback(cb_data)
             # callbackTime = @elapsed begin
