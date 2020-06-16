@@ -27,7 +27,7 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     negOneIndicesList = Array{Array{Int64, 1}, 1}(undef, yLen)
     y = nothing
     if (takeSign)
-        z = @variable(m, [1:yLen], upper_bound=1, lower_bound=0, # binary=true,
+        z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
         y = @expression(m, 2 .* z .- 1)
         for i in 1:yLen
@@ -78,12 +78,10 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     if (preCut && (nonzeroNum <= CUTOFF_DENSE_BIN_PRECUT) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
         IsetAll = IsetAll[2:length(IsetAll)]
+        (var, _) = collect(yi.terms)[1]
+        MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1000)
     else
         IsetAll = [union(oneIndices, negOneIndices)]
-        # if (nonzeroNum > CUTOFF_DENSE_BIN || ~cuts)
-        z = @variable(m, binary=true)
-        @constraint(m, yi == 2 * z - 1)
-        # end
     end
     for Iset1 in IsetAll
         Ipos = intersect(Iset1, oneIndices)

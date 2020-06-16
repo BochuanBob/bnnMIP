@@ -45,7 +45,7 @@ function conv2dBinSign(m::JuMP.Model, x::VarOrAff,
     kappaList = zeros(outputSize)
     oneIndicesList = Array{Array{CartesianIndex{3}, 1}, 3}(undef, outputSize)
     negOneIndicesList = Array{Array{CartesianIndex{3}, 1}, 3}(undef, outputSize)
-    z = @variable(m, [1:y1Len, 1:y2Len, 1:y3Len], upper_bound=1, lower_bound=0,
+    z = @variable(m, [1:y1Len, 1:y2Len, 1:y3Len], binary=true,
                 base_name="z_$count")
     y = @expression(m, 2 .* z .- 1)
     for i in 1:y1Len
@@ -105,12 +105,10 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
     if (preCut && (nonzeroNum <= CUTOFF_CONV2D_BIN_PRECUT) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
         IsetAll = IsetAll[2:length(IsetAll)]
+        (var, _) = collect(yijk.terms)[1]
+        MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1000)
     else
         IsetAll = [union(oneIndices, negOneIndices)]
-        # if (nonzeroNum > CUTOFF_CONV2D_BIN || ~cuts)
-        z = @variable(m, binary=true)
-        @constraint(m, yijk == 2 * z - 1)
-        # end
     end
     for Iset1 in IsetAll
         Ipos = intersect(Iset1, oneIndices)
