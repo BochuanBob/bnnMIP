@@ -128,7 +128,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
         global userIter = 0
         function callbackUserCutsBNN(cb_data)
             userIter += 1
-            if (userIter>100 && mod(userIter, 10) != 1)
+            if (userIter> 100 && mod(userIter, 1000) != 1)
                 return
             end
             callbackTime = @elapsed begin

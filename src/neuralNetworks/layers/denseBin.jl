@@ -3,7 +3,7 @@ include("denseSetup.jl")
 export denseBin, addDenseBinCons!
 
 const CUTOFF_DENSE_BIN = 10
-
+const CUTOFF_DENSE_BIN_PRECUT = 5
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
@@ -27,7 +27,7 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     negOneIndicesList = Array{Array{Int64, 1}, 1}(undef, yLen)
     y = nothing
     if (takeSign)
-        z = @variable(m, [1:yLen], upper_bound=1, lower_bound=0,# binary=true,
+        z = @variable(m, [1:yLen], upper_bound=1, lower_bound=0, # binary=true,
                     base_name="z_$count")
         y = @expression(m, 2 .* z .- 1)
         for i in 1:yLen
@@ -75,7 +75,7 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         @constraint(m, yi == -1)
         return tau, kappa, oneIndices, negOneIndices
     end
-    if (preCut && (nonzeroNum <= 6) )
+    if (preCut && (nonzeroNum <= CUTOFF_DENSE_BIN_PRECUT) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
         IsetAll = IsetAll[2:length(IsetAll)]
     else

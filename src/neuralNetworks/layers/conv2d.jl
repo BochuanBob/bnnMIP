@@ -3,6 +3,9 @@ include("activation.jl")
 include("denseSetup.jl")
 export conv2dSign
 
+const CUTOFF_CONV2D = 10
+const CUTOFF_CONV2D_PRECUT = 5
+
 # The MIP formulation for general conv2d layer
 function conv2dSign(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 4}, bias::Array{U, 1},
@@ -102,7 +105,7 @@ function neuronConv2dSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
         tau, kappa= b, b
     end
     uNew, lNew = transformProc(negIndices, upper, lower)
-    if (preCut && (nonzeroNum <= 5) )
+    if (preCut && (nonzeroNum <= CUTOFF_CONV2D_PRECUT) )
         IsetAll = collect(powerset(nonzeroIndices))
         IsetAll = IsetAll[2:length(IsetAll)]
     else
@@ -163,7 +166,7 @@ function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                 if (nonzeroNum == 0)
                     continue
                 end
-                if (nonzeroNum > 10)
+                if (nonzeroNum > CUTOFF_CONV2D)
                     continue
                 end
                 wVec = weights[:, :, :, k]

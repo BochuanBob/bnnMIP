@@ -3,6 +3,8 @@ include("activation.jl")
 include("denseSetup.jl")
 export dense, addDenseCons!
 
+const CUTOFF_DENSE = 10
+const CUTOFF_DENSE_PRECUT = 5
 # The MIP formulation for general dense layer
 function dense(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1},
@@ -73,7 +75,7 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         tau, kappa= b, b
     end
     uNew, lNew = transformProc(negIndices, upper, lower)
-    if (preCut && (nonzeroNum <= 5) )
+    if (preCut && (nonzeroNum <= CUTOFF_DENSE_PRECUT) )
         IsetAll = collect(powerset(nonzeroIndices))
         IsetAll = IsetAll[2:length(IsetAll)]
     else
@@ -116,7 +118,7 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         if (nonzeroNum == 0)
             continue
         end
-        if (nonzeroNum > 10)
+        if (nonzeroNum > CUTOFF_DENSE)
             continue
         end
         tau, kappa = tauList[i], kappaList[i]

@@ -3,6 +3,7 @@ include("denseSetup.jl")
 export conv2dBinSign
 
 const CUTOFF_CONV2D_BIN = 10
+const CUTOFF_CONV2D_BIN_PRECUT = 5
 
 # A conv2d layer with sign().
 # Each entry of weights must be -1, 0, 1.
@@ -101,7 +102,7 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
         @constraint(m, yijk == -1)
         return tau, kappa, oneIndices, negOneIndices
     end
-    if (preCut && (nonzeroNum <= 6) )
+    if (preCut && (nonzeroNum <= CUTOFF_CONV2D_BIN_PRECUT) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
         IsetAll = IsetAll[2:length(IsetAll)]
     else
