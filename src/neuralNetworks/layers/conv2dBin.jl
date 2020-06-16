@@ -107,10 +107,10 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
         IsetAll = IsetAll[2:length(IsetAll)]
     else
         IsetAll = [union(oneIndices, negOneIndices)]
-        if (nonzeroNum > CUTOFF_CONV2D_BIN || ~cuts)
-            z = @variable(m, binary=true)
-            @constraint(m, yijk == 2 * z - 1)
-        end
+        # if (nonzeroNum > CUTOFF_CONV2D_BIN || ~cuts)
+        z = @variable(m, binary=true)
+        @constraint(m, yijk == 2 * z - 1)
+        # end
     end
     for Iset1 in IsetAll
         Ipos = intersect(Iset1, oneIndices)
@@ -172,7 +172,7 @@ function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                     lenI1 = length(I1pos) + length(I1neg)
                     con1 = getFirstBinCon(xInN,xOut[idy],I1pos,
                                     I1neg,lenI1,nonzeroNum,tau)
-                    MOI.submit(m, MOI.LazyConstraint(cb_data), con1)
+                    MOI.submit(m, MOI.UserCut(cb_data), con1)
                     m.ext[:CUTS].count += 1
                 end
                 if (con2Val > 10^(-6))
@@ -181,7 +181,7 @@ function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                     lenI2 = length(I2pos) + length(I2neg)
                     con2 = getSecondBinCon(xInN,xOut[idy],I2pos,I2neg,
                                     lenI2,nonzeroNum,kappa)
-                    MOI.submit(m, MOI.LazyConstraint(cb_data), con2)
+                    MOI.submit(m, MOI.UserCut(cb_data), con2)
                     m.ext[:CUTS].count += 1
                 end
             end

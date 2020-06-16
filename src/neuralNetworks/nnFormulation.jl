@@ -94,9 +94,14 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
     y = xOut
     # Whether submit the cuts to Gurobi.
     if (cuts)
+        global iter = 0
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
             callbackTime = @elapsed begin
+                iter += 1
+                if (iter > 100 && mod(iter, 100) == 1)
+                    return
+                end
                 flag = true
                 for i in 1:nnLen
                     # if (~flag)
@@ -120,21 +125,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
                                             nn[i]["negOneIndicesList"],
                                             nn[i]["weights"], strides,
                                             cb_data)
-                    end
-                end
-            end
-            callbackTimeTotal += callbackTime
-        end
-        global userIter = 0
-        function callbackUserCutsBNN(cb_data)
-            userIter += 1
-            if (userIter> 100 && mod(userIter, 1000) != 1)
-                return
-            end
-            callbackTime = @elapsed begin
-                flag = true
-                for i in 1:nnLen
-                    if (nn[i]["type"] == "dense" && nn[i]["takeSign"])
+                    elseif (nn[i]["type"] == "dense" && nn[i]["takeSign"])
                         xIn = nn[i]["xIn"]
                         xOut = nn[i]["xOut"]
                         flag = addDenseCons!(m, xIn, xOut, nn[i]["weights"],
@@ -156,8 +147,7 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
             end
             callbackTimeTotal += callbackTime
         end
-        MOI.set(m, MOI.LazyConstraintCallback(), callbackCutsBNN)
-        MOI.set(m, MOI.UserCutCallback(), callbackUserCutsBNN)
+        MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     else
         function callback(cb_data)
             # callbackTime = @elapsed begin
