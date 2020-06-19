@@ -7,32 +7,29 @@ include("../src/utilities.jl")
 include("../src/verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn3x100.mat", "nn")
+nn = readNN("../data/nnF200_3F100_E10.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
-num = 10
-epsilonList = [0.02]
+num = 20
+epsilonList = [0.012]
 
 Random.seed!(2020)
-nn[3]["weights"] = keepOnlyKEntries(nn[3]["weights"], 5)
 # nn[3]["weights"] = keepOnlyKEntriesSeq(nn[3]["weights"], 20)
 # nn[4]["weights"] = keepOnlyKEntriesSeq(nn[4]["weights"], 20)
 # nn[5]["weights"] = keepOnlyKEntries(nn[5]["weights"], 20)
 # nn[6]["weights"] = keepOnlyKEntriesSeq(nn[6]["weights"], 20)
-println(length(findall(nn[2]["weights"] .!= 0)))
-println(length(findall(nn[3]["weights"] .!= 0)))
 sampleIndex = rand(1:length(testLabels), num)
 trueIndices = testLabels[sampleIndex]
 targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 2000
+timeLimit = 100
 
 for epsilon in epsilonList
-    for method in ["DefaultCuts"]
-        for i in 1
+    for method in ["UserCuts"]
+        for i in 9:9
             cuts = false
             preCut = false
             if (method == "NoCuts")
@@ -43,15 +40,11 @@ for epsilon in epsilonList
                                 TimeLimit=timeLimit, Threads=4))
             elseif (method == "AllCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
-                                Cuts=0, TimeLimit=timeLimit, Threads=4))
-                # set_optimizer_attribute(m, "CutPasses", 20000)
-                # , MIRCuts=1,
-                # ModKCuts=1,NetworkCuts=1,ProjImpliedCuts=1,
-                # StrongCGCuts=1
+                                Cuts=1, TimeLimit=timeLimit, Threads=4))
                 cuts = true
             elseif (method == "UserCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit, PreCrush=1))
+                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
                 cuts = true
             elseif (method == "PreCut")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
@@ -93,11 +86,13 @@ for epsilon in epsilonList
             println("Output: ", value.(y))
             println("Runtime: ", MOI.get(m, Gurobi.ModelAttribute("Runtime")))
             println("Obj: ", MOI.get(m, Gurobi.ModelAttribute("ObjVal")))
-            # println("Bound: ", MOI.get(m, Gurobi.ModelAttribute("ObjBoundC")))
-            # println("Node: ", MOI.get(m, Gurobi.ModelAttribute("NodeCount")))
-            # println("Cons: ", MOI.get(m, Gurobi.ModelAttribute("NumConstrs")))
-            # println("Iters: ", MOI.get(m, Gurobi.ModelAttribute("IterCount")))
+            println("Bound: ", MOI.get(m, Gurobi.ModelAttribute("ObjBoundC")))
+            println("Node: ", MOI.get(m, Gurobi.ModelAttribute("NodeCount")))
+            println("Cons: ", MOI.get(m, Gurobi.ModelAttribute("NumConstrs")))
+            println("Iters: ", MOI.get(m, Gurobi.ModelAttribute("IterCount")))
             println("Callback: ", callbackTimeTotal)
+            println("bench_conv2d: ", m.ext[:BENCH_CONV2D].time)
+            println("TEST_CONSTRAINTS: ", m.ext[:TEST_CONSTRAINTS].count)
             println("User Cuts Submitted: ", m.ext[:CUTS].count)
         end
     end

@@ -5,11 +5,10 @@ include("testFunc.jl")
 
 include("../src/neuralNetworks.jl")
 include("../src/utilities.jl")
-nn = readNN("../data/nnConv2LayersSame.mat", "nn")
+nn = readNN("../data/nnConv3LayersSame.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 inputSize = nn[1]["inputSize"]
-println(size(nn[1]["upper"]))
 @assert inputSize isa NTuple{N, Int} where {N}
 
 for i in 1:10

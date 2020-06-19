@@ -7,12 +7,12 @@ include("utilities.jl")
 include("verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn3Layers.mat", "nn")
+nn = readNN("../data/nn3ConvLayers.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
-num = 10
-epsilonList = [0.03]
+num = 20
+epsilonList = [0.08]
 
 Random.seed!(2020)
 sampleIndex = rand(1:length(testLabels), num)
@@ -22,7 +22,7 @@ for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
 timeLimit = 1800
-methodList = ["NoCuts", "DefaultCuts", "PreCut", "PreCutDefault"]
+methodList = ["NoCuts", "DefaultCuts", "PreCut", "PreCutUser", "UserCuts"]
 
 # Ouputs
 totalLen = length(methodList)*length(epsilonList)*num
@@ -40,6 +40,7 @@ consOut = zeros(totalLen)
 itersOut = zeros(totalLen)
 callbackOut = zeros(totalLen)
 userCutsOut = zeros(totalLen)
+InstanceOut = zeros(totalLen)
 
 count = [1]
 
@@ -70,8 +71,8 @@ for epsilon in epsilonList
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
                                 TimeLimit=timeLimit))
                 preCut = true
-            elseif (method == "PreCutAll")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+            elseif (method == "PreCutUser")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
                                 TimeLimit=timeLimit))
                 preCut = true
                 cuts = true
@@ -92,6 +93,7 @@ for epsilon in epsilonList
                 forwardProp(value.(x), nn))
             println("Output: ", value.(y))
 
+            InstanceOut[count[1]] = i
             sampleIndexList[count[1]] = sampleIndex[i]
             trueIndexList[count[1]] = trueIndex
             targetIndexList[count[1]] = targetIndex
@@ -110,9 +112,11 @@ for epsilon in epsilonList
     end
 end
 
-df = DataFrame(Samples=sampleIndexList, TrueIndices=trueIndexList,
+df = DataFrame(Instance=InstanceOut, Samples=sampleIndexList,
+            TrueIndices=trueIndexList,
             TargetIndices=targetIndexList, Methods=methodsOut,
             Epsilons=epsilonOut, RunTimes=runTimeOut, Objs=objsOut,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
-            IterCount=itersOut, callbackTimes=callbackOut, submittedCuts=userCutsOut)
-CSV.write("results3Layers.csv", df)
+            IterCount=itersOut, callbackTimes=callbackOut,
+            submittedCuts=userCutsOut)
+CSV.write("results3ConvLayers.csv", df)

@@ -99,9 +99,9 @@ function getBNNoutput(m::JuMP.Model, nn, x::VarOrAff; cuts=true,
         function callbackCutsBNN(cb_data)
             callbackTime = @elapsed begin
                 iter += 1
-                if (iter > 100 && mod(iter, 100) == 1)
-                    return
-                end
+                # if (iter > 100 && mod(iter, 100) == 1)
+                #     return
+                # end
                 flag = true
                 for i in 1:nnLen
                     # if (~flag)
