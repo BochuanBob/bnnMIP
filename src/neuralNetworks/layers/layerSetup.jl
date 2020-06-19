@@ -9,6 +9,11 @@ mutable struct nnData
     nnData() = new(0)
 end
 
+mutable struct timeData
+    time::Float64
+    timeData() = new(0)
+end
+
 # In order to add base_name for variables.
 function initNN!(m::JuMP.Model)
     if !haskey(m.ext, :NN)
@@ -16,6 +21,12 @@ function initNN!(m::JuMP.Model)
     end
     if !haskey(m.ext, :CUTS)
         m.ext[:CUTS] = nnData()
+    end
+    if !haskey(m.ext, :BENCH_CONV2D)
+        m.ext[:BENCH_CONV2D] = timeData()
+    end
+    if !haskey(m.ext, :TEST_CONSTRAINTS)
+        m.ext[:TEST_CONSTRAINTS] = nnData()
     end
     return nothing
 end

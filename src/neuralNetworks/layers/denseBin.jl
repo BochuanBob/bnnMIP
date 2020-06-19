@@ -2,8 +2,9 @@ include("layerSetup.jl")
 include("denseSetup.jl")
 export denseBin, addDenseBinCons!
 
-const CUTOFF_DENSE_BIN = 10
+const CUTOFF_DENSE_BIN = 50
 const CUTOFF_DENSE_BIN_PRECUT = 5
+const NONZERO_MAX_DENSE_BIN = 200
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
@@ -75,11 +76,20 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         @constraint(m, yi == -1)
         return tau, kappa, oneIndices, negOneIndices
     end
+
+    if (preCut && (nonzeroNum <= CUTOFF_DENSE_BIN_PRECUT))
+        (var, _) = collect(yi.terms)[1]
+        MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1)
+    end
+
+    # if (cuts && (nonzeroNum <= NONZERO_MAX_DENSE_BIN))
+    #     (var, _) = collect(yi.terms)[1]
+    #     MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1000)
+    # end
+
     if (preCut && (nonzeroNum <= CUTOFF_DENSE_BIN_PRECUT) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
         IsetAll = IsetAll[2:length(IsetAll)]
-        (var, _) = collect(yi.terms)[1]
-        MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1000)
     else
         IsetAll = [union(oneIndices, negOneIndices)]
     end
@@ -103,51 +113,64 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     yLen, xLen = length(xOut), length(xIn)
     xVal = zeros(xLen)
     for j in 1:xLen
-        xVal[j] = aff_callback_value(cb_data, xIn[j])
+        xVal[j] = Float64(aff_callback_value(cb_data, xIn[j]))
     end
     contFlag = true
     yVal = zeros(yLen)
+    K = 2
+    iter = 0
     for i in 1:yLen
-        yVal[i] = aff_callback_value(cb_data, xOut[i])
+        # if (iter > K)
+        #     break
+        # end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
-        if (nonzeroNum > CUTOFF_DENSE_BIN)
-            continue
-        end
         tau, kappa = tauList[i], kappaList[i]
         if (nonzeroNum == 0 || tau >= nonzeroNum || kappa <= -nonzeroNum)
             continue
         end
+        if (nonzeroNum > NONZERO_MAX_DENSE_BIN)
+            continue
+        end
+        yVal[i] = Float64(aff_callback_value(cb_data, xOut[i]))
+        if (-0.99 >= yVal[i] || yVal[i] >= 0.99)
+            continue
+        end
         con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, tau, kappa)
-        if (con1Val > 10^(-6))
+        if (con1Val > 0.01)
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices)
             lenI1 = length(I1pos) + length(I1neg)
-            con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
-            # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
-            MOI.submit(m, MOI.UserCut(cb_data), con1)
-            m.ext[:CUTS].count += 1
+            if (lenI1 <= CUTOFF_DENSE_BIN)
+                con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
+                # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
+                MOI.submit(m, MOI.UserCut(cb_data), con1)
+                m.ext[:CUTS].count += 1
+                iter += 1
+            end
         end
-        if (con2Val > 10^(-6))
+        if (con2Val > 0.01)
             I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices)
             lenI2 = length(I2pos) + length(I2neg)
-            con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-            # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-            MOI.submit(m, MOI.UserCut(cb_data), con2)
-            m.ext[:CUTS].count += 1
+            if (lenI2 <= CUTOFF_DENSE_BIN)
+                con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+                # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+                MOI.submit(m, MOI.UserCut(cb_data), con2)
+                m.ext[:CUTS].count += 1
+                iter += 1
+            end
         end
     end
     return contFlag
 end
 
-function decideViolationConsBin(xVal::Array{R1, 1}, yVal::R2,
+function decideViolationConsBin(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1},
-                        tau::R3, kappa::R4) where {R1<:Real, R2<:Real,
-                        R3<:Real, R4<:Real}
+                        tau::Float64, kappa::Float64)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
     # Initially, I = []
     con1Val = (nonzeroNum + tau) * (1+yVal) / 2
@@ -172,9 +195,9 @@ function decideViolationConsBin(xVal::Array{R1, 1}, yVal::R2,
 end
 
 # Output positive and negative I^1 for the first constraint in Proposition 3.
-function getFirstBinCutIndices(xVal::Array{T, 1}, yVal::U,
+function getFirstBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
-                        negOneIndices::Array{Int64, 1}) where {T<:Real, U<:Real}
+                        negOneIndices::Array{Int64, 1})
     I1pos = Array{Int64, 1}([])
     I1neg = Array{Int64, 1}([])
     for i in oneIndices
@@ -192,9 +215,9 @@ function getFirstBinCutIndices(xVal::Array{T, 1}, yVal::U,
 end
 
 # Output positive and negative I^2 for the second constraint in Proposition 3.
-function getSecondBinCutIndices(xVal::Array{T, 1}, yVal::U,
+function getSecondBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
-                        negOneIndices::Array{Int64, 1}) where {T<:Real, U<:Real}
+                        negOneIndices::Array{Int64, 1})
     I2pos = Array{Int64, 1}([])
     I2neg = Array{Int64, 1}([])
     for i in oneIndices
@@ -218,7 +241,7 @@ function getFirstBinCon(x::VarOrAff, yi::VarOrAff,
                             Ineg::Array{Int64, 1},
                             lenI::Int64,
                             nonzeroNum::Int64,
-                            tau::T) where {T <: Real}
+                            tau::Float64)
     return @build_constraint((sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
                     >=(((lenI - nonzeroNum - tau) * (1 + yi) /2) - (1 - yi) * lenI/2 ))
 end
@@ -230,7 +253,7 @@ function getSecondBinCon(x::VarOrAff, yi::VarOrAff,
                             Ineg::Array{Int64, 1},
                             lenI::Int64,
                             nonzeroNum::Int64,
-                            kappa::T) where {T <: Real}
+                            kappa::Float64)
     return @build_constraint((sum(x[i] for i in Ipos) - sum(x[i] for i in Ineg))
                 <=(((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2))
 end
@@ -241,7 +264,7 @@ function assertFirstBinCon(x, yi,
                             Ineg::Array{Int64, 1},
                             lenI::Int64,
                             nonzeroNum::Int64,
-                            tau::T) where {T <: Real}
+                            tau::Float64)
     @assert((sum(x[Ipos]) - sum(x[Ineg]))
                     < (((lenI - nonzeroNum - tau) * (1 + yi) /2) - (1 - yi) * lenI/2 ))
     return
@@ -252,7 +275,7 @@ function assertSecondBinCon(x, yi,
                             Ineg::Array{Int64, 1},
                             lenI::Int64,
                             nonzeroNum::Int64,
-                            kappa::T) where {T <: Real}
+                            kappa::Float64)
     @assert((sum(x[Ipos]) - sum(x[Ineg]))
                 > (((1 + yi) * lenI/2) - (lenI - nonzeroNum + kappa)*(1 - yi)/2))
     return
