@@ -53,6 +53,7 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
             nn[i].uNewList = uNewList
             nn[i].lNewList = lNewList
             nn[i].takeSign = (actFunc=="Sign")
+            println("Dense: ", nn[i].takeSign)
             nn[i].xIn = xIn
             nn[i].xOut = xOut
         elseif (typeof(nn[i]) == Conv2dLayer)
@@ -92,24 +93,28 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
     # Whether submit the cuts to Gurobi.
     if (cuts)
         # Generate cuts by callback function
-        function callbackCutsBNN(cb_data, nnCopy::Array{NNLayer, 1})
-            # callbackTime = @elapsed begin
-                if (typeof(nnCopy[1]) == FlattenLayer)
-                    xOut = nnCopy[1].xOut
-                    weights = nnCopy[2].weights
-                    xLen = length(xOut)
+        iter = 0
+        function callbackCutsBNN(cb_data)
+            callbackTime = @elapsed begin
+                iter += 1
+                # if (mod(iter, 10) != 1)
+                #     return
+                # end
+                if (typeof(nn[1]) == FlattenLayer)
+                    xOut = nn[1].xOut
                     xInVal = aff_callback_value.(Ref(cb_data), xOut)
-                elseif (typeof(nnCopy[1]) == Conv2dLayer)
-                    xIn = nnCopy[1].xIn
-                    xOut = nnCopy[1].xOut
-                    strides = nnCopy[1].strides
-                    xInVal, flag = addConv2dCons!(m, xIn, xOut, nnCopy[1].weights,
-                                    nnCopy[1].tauList, nnCopy[1].kappaList,
-                                    nnCopy[1].nonzeroIndicesList,
-                                    nnCopy[1].uNewList, nnCopy[1].lNewList,
+
+                elseif (typeof(nn[1]) == Conv2dLayer)
+                    xIn = nn[1].xIn
+                    xOut = nn[1].xOut
+                    strides = nn[1].strides
+                    xInVal, flag = addConv2dCons!(m, xIn, xOut, nn[1].weights,
+                                    nn[1].tauList, nn[1].kappaList,
+                                    nn[1].nonzeroIndicesList,
+                                    nn[1].uNewList, nn[1].lNewList,
                                     strides, cb_data, image=image)
                 end
-
+                nnLen = length(nn)
                 for i in 2:nnLen
                     if (typeof(nn[i]) == DenseBinLayer && nn[i].takeSign)
                         xIn = nn[i].xIn
@@ -140,24 +145,22 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
                                         nn[i].nonzeroIndicesList,
                                         nn[i].uNewList, nn[i].lNewList,
                                         cb_data, image=image)
-                    elseif (typeof(nn[i]) == Flatten)
-                        xOut = nn[i].xOut
-                        xLen = length(xOut)
-                        xInVal = zeros(xLen)
-                        for j in 1:xLen
-                            xInVal = aff_callback_value(cb_data, xOut[j])
-                        end
+                    elseif (typeof(nn[i]) == FlattenLayer)
+                        xInVal = aff_callback_value.(Ref(cb_data), nn[i].xOut)
+                        # for j in 1:xLen
+                        #
+                        # end
                     end
                 end
             end
             m.ext[:CALLBACK_TIME].time += callbackTime
         end
-        set(backend(m), MOI.UserCutCallback(), callbackCutsBNN)
+        MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     else
-        function callback(cb_data, nn::Array{NNLayer, 1})
+        function callback(cb_data)
             return
         end
-        set(backend(m), MOI.UserCutCallback(), callback)
+        MOI.set(m, MOI.UserCutCallback(), callback)
     end
     return y, nn
 end

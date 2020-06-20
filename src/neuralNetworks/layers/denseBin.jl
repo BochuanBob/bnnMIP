@@ -2,9 +2,9 @@ include("layerSetup.jl")
 include("denseSetup.jl")
 export denseBin, addDenseBinCons!
 
-const CUTOFF_DENSE_BIN = 10
+const CUTOFF_DENSE_BIN = 100
 const CUTOFF_DENSE_BIN_PRECUT = 5
-const NONZERO_MAX_DENSE_BIN = 200
+const NONZERO_MAX_DENSE_BIN = 500
 const EXTEND_CUTOFF_DENSE_BIN = 10
 # A fully connected layer with sign() or
 # without activation function.
@@ -12,7 +12,7 @@ const EXTEND_CUTOFF_DENSE_BIN = 10
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{Float64, 2}, bias::Array{Float64, 1};
                takeSign=false, image=true, preCut=true,
-               cuts=true, extend=true)
+               cuts=true, extend=false)
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -131,15 +131,13 @@ function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
     #     xVal[j] = Float64(aff_callback_value(cb_data, xIn[j]))
     # end
     contFlag = true
-    yVal = zeros(yLen)
     K = 2
     iter = 0
+    yVal = aff_callback_value.(Ref(cb_data), xOut)
     for i in 1:yLen
         # if (iter > K)
         #     break
         # end
-
-        yVal[i] = aff_callback_value(cb_data, xOut[i])
         if (-0.99 >= yVal[i] || yVal[i] >= 0.99)
             continue
         end
