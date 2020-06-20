@@ -216,7 +216,6 @@ function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                         con2 = getSecondCon(xInN, xOut[i,j,k], I2,
                                     nonzeroIndices, wVec, kappa, uNew, lNew)
                         MOI.submit(m, MOI.UserCut(cb_data), con2)
-                        m.ext[:BENCH_CONV2D].time += time
                         m.ext[:CUTS].count += 1
                         iter += 1
                     end
@@ -224,7 +223,7 @@ function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
             end
         end
     end
-    return contFlag
+    return yVal, contFlag
 end
 
 function decideViolationCons(xVal::Array{Float64, 3}, yVal::Float64,
@@ -261,7 +260,7 @@ function getFirstCutIndices(xVal::Array{Float64, 3}, yVal::Float64,
 end
 
 # Output I^2 for the second constraint in Proposition 1
-function getSecondCutIndices(xVal::Array{Float64, 3}, yVal::U,
+function getSecondCutIndices(xVal::Array{Float64, 3}, yVal::Float64,
                         nonzeroIndices::Array{CartesianIndex{3},1},
                         w::Array{Float64, 3},
                         upper::Array{Float64, 3}, lower::Array{Float64, 3}

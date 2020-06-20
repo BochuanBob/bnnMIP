@@ -25,6 +25,9 @@ function initNN!(m::JuMP.Model)
     if !haskey(m.ext, :BENCH_CONV2D)
         m.ext[:BENCH_CONV2D] = timeData()
     end
+    if !haskey(m.ext, :CALLBACK_TIME)
+        m.ext[:CALLBACK_TIME] = timeData()
+    end
     if !haskey(m.ext, :TEST_CONSTRAINTS)
         m.ext[:TEST_CONSTRAINTS] = nnData()
     end
@@ -37,4 +40,8 @@ function aff_callback_value(cb_data, aff::GenericAffExpr{Float64,VariableRef})
        ret += coef * callback_value(cb_data, var)
    end
    return ret
+end
+
+function aff_callback_value(cb_data, aff::VariableRef)
+   return JuMP.callback_value(cb_data, aff)
 end

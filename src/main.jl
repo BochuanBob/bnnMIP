@@ -1,4 +1,4 @@
-using JuMP, Gurobi
+using JuMP
 using Random
 using CSV
 using DataFrames
@@ -105,7 +105,7 @@ for epsilon in epsilonList
             nodesOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("NodeCount"))
             consOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("NumConstrs"))
             itersOut[count[1]] = MOI.get(m, Gurobi.ModelAttribute("IterCount"))
-            callbackOut[count[1]] = callbackTimeTotal
+            callbackOut[count[1]] = m.ext[:CALLBACK_TIME].time
             userCutsOut[count[1]]= m.ext[:CUTS].count
             count[1] = count[1] + 1
         end

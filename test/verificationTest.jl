@@ -1,4 +1,4 @@
-using JuMP, Gurobi
+using JuMP
 using Random
 using CSV
 using DataFrames
@@ -7,12 +7,12 @@ include("../src/utilities.jl")
 include("../src/verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nnF200_3F100_E10.mat", "nn")
+nn = readNN("../data/nn2x500AllSparseE12.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 20
-epsilonList = [0.012]
+epsilonList = [0.01]
 
 Random.seed!(2020)
 # nn[3]["weights"] = keepOnlyKEntriesSeq(nn[3]["weights"], 20)
@@ -69,12 +69,12 @@ for epsilon in epsilonList
             input=testImages[sampleIndex[i],:,:,:]
             trueIndex=trueIndices[i]
             targetIndex=targetIndices[i]
-            x, xInt, y = perturbationVerify(m, nn, input, trueIndex,
+            x, xInt, y, nnCopy = perturbationVerify(m, nn, input, trueIndex,
                                     targetIndex, epsilon, cuts=cuts,
                                     image=true, preCut=preCut)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
-            optimize!(m)
+            myOptimize!(backend(m), nnCopy)
             println("Sample index: ", sampleIndex[i])
             println("True index: ", trueIndex)
             println("Target index: ", targetIndex)
@@ -90,7 +90,7 @@ for epsilon in epsilonList
             println("Node: ", MOI.get(m, Gurobi.ModelAttribute("NodeCount")))
             println("Cons: ", MOI.get(m, Gurobi.ModelAttribute("NumConstrs")))
             println("Iters: ", MOI.get(m, Gurobi.ModelAttribute("IterCount")))
-            println("Callback: ", callbackTimeTotal)
+            println("Callback: ", m.ext[:CALLBACK_TIME].time)
             println("bench_conv2d: ", m.ext[:BENCH_CONV2D].time)
             println("TEST_CONSTRAINTS: ", m.ext[:TEST_CONSTRAINTS].count)
             println("User Cuts Submitted: ", m.ext[:CUTS].count)

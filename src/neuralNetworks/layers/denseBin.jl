@@ -2,16 +2,17 @@ include("layerSetup.jl")
 include("denseSetup.jl")
 export denseBin, addDenseBinCons!
 
-const CUTOFF_DENSE_BIN = 50
+const CUTOFF_DENSE_BIN = 10
 const CUTOFF_DENSE_BIN_PRECUT = 5
 const NONZERO_MAX_DENSE_BIN = 200
+const EXTEND_CUTOFF_DENSE_BIN = 10
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
 function denseBin(m::JuMP.Model, x::VarOrAff,
-               weights::Array{T, 2}, bias::Array{U, 1};
+               weights::Array{Float64, 2}, bias::Array{Float64, 1};
                takeSign=false, image=true, preCut=true,
-               cuts=true) where{T<:Real, U<:Real}
+               cuts=true, extend=true)
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -30,11 +31,14 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     if (takeSign)
         z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
-        y = @expression(m, 2 .* z .- 1)
+        # y = @expression(m, 2 .* z .- 1)
+        y = @variable(m, [1:yLen],
+                    base_name="y_$count")
+        @constraint(m, 2 .* z .- 1 .== y)
         for i in 1:yLen
             tauList[i], kappaList[i], oneIndicesList[i], negOneIndicesList[i] =
                 neuronSign(m, x, y[i], weights[i, :], bias[i],
-                        image=image, preCut=preCut, cuts=cuts)
+                        image=image, preCut=preCut, cuts=cuts, extend=extend)
         end
     else
         y = @variable(m, [1:yLen],
@@ -48,7 +52,8 @@ end
 # A MIP formulation for a single neuron.
 function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                 weightVec::Array{T, 1}, b::U;
-                image=true, preCut=true, cuts=true) where{T<:Real, U<:Real}
+                image=true, preCut=true, cuts=true,
+                extend=true) where{T<:Real, U<:Real}
     # initNN!(m)
     oneIndices = findall(weightVec .== 1)
     negOneIndices = findall(weightVec .== -1)
@@ -77,15 +82,24 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         return tau, kappa, oneIndices, negOneIndices
     end
 
-    if (preCut && (nonzeroNum <= CUTOFF_DENSE_BIN_PRECUT))
-        (var, _) = collect(yi.terms)[1]
-        MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1)
-    end
-
-    # if (cuts && (nonzeroNum <= NONZERO_MAX_DENSE_BIN))
+    # if ((preCut || cuts) && (nonzeroNum <= CUTOFF_DENSE_BIN_PRECUT))
     #     (var, _) = collect(yi.terms)[1]
-    #     MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1000)
+    #     MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1)
     # end
+
+    if (extend && nonzeroNum <= EXTEND_CUTOFF_DENSE_BIN)
+        x1 = @variable(m, [1:nonzeroNum])
+        nonzeroList = union(oneIndices, negOneIndices)
+        @constraint(m, x1 .>= -(-yi+1) / 2)
+        @constraint(m, x1 .<= (-yi+1) / 2)
+        @constraint(m, [i=1:nonzeroNum], x[nonzeroList[i]]-x1[i] >= -(yi+1) / 2)
+        @constraint(m, [i=1:nonzeroNum], x[nonzeroList[i]]-x1[i] <= (yi+1) / 2)
+        @constraint(m, sum(weightVec[nonzeroList[i]] * x1[i]
+                        for i in 1:nonzeroNum) + (kappa/2) * (-yi+1) <= 0)
+        @constraint(m, sum(weightVec[nonzeroList[i]] * (x[nonzeroList[i]]-x1[i])
+                        for i in 1:nonzeroNum) + (tau/2) * (yi+1) >= 0)
+        return tau, kappa, oneIndices, negOneIndices
+    end
 
     if (preCut && (nonzeroNum <= CUTOFF_DENSE_BIN_PRECUT) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
@@ -105,16 +119,17 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     return tau, kappa, oneIndices, negOneIndices
 end
 
-function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
+function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
+                        xOut::VarOrAff,
                         tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         oneIndicesList::Array{Array{Int64, 1}, 1},
                         negOneIndicesList::Array{Array{Int64, 1}, 1}, cb_data)
     yLen, xLen = length(xOut), length(xIn)
-    xVal = zeros(xLen)
-    for j in 1:xLen
-        xVal[j] = Float64(aff_callback_value(cb_data, xIn[j]))
-    end
+    # xVal = zeros(xLen)
+    # for j in 1:xLen
+    #     xVal[j] = Float64(aff_callback_value(cb_data, xIn[j]))
+    # end
     contFlag = true
     yVal = zeros(yLen)
     K = 2
@@ -123,22 +138,25 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
         # if (iter > K)
         #     break
         # end
+
+        yVal[i] = aff_callback_value(cb_data, xOut[i])
+        if (-0.99 >= yVal[i] || yVal[i] >= 0.99)
+            continue
+        end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
         tau, kappa = tauList[i], kappaList[i]
+
         if (nonzeroNum == 0 || tau >= nonzeroNum || kappa <= -nonzeroNum)
             continue
         end
         if (nonzeroNum > NONZERO_MAX_DENSE_BIN)
             continue
         end
-        yVal[i] = Float64(aff_callback_value(cb_data, xOut[i]))
-        if (-0.99 >= yVal[i] || yVal[i] >= 0.99)
-            continue
-        end
         con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, tau, kappa)
+        m.ext[:TEST_CONSTRAINTS].count += 2
         if (con1Val > 0.01)
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices)
@@ -164,7 +182,7 @@ function addDenseBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
             end
         end
     end
-    return contFlag
+    return yVal, contFlag
 end
 
 function decideViolationConsBin(xVal::Array{Float64, 1}, yVal::Float64,

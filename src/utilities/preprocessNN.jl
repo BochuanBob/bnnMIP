@@ -27,5 +27,56 @@ function preprocNN(nn)
         end
     end
     # TODO: Work on this function later.
-    return nn
+    nnOut = getNNLayerArray(nn)
+    return nnOut
+end
+
+function getNNLayerArray(nn)
+    nnLen = length(nn)
+    nnOut = Array{NNLayer, 1}(undef, nnLen)
+    for i in 1:nnLen
+        if (nn[i]["type"] == "flatten")
+            nnOut[i] = FlattenLayer()
+            if (i == 1)
+                nnOut[i].inputSize = nn[1]["inputSize"]
+            end
+        elseif (nn[i]["type"]  == "dense")
+            nnOut[i] = DenseLayer()
+            nnOut[i].weights = nn[i]["weights"]
+            nnOut[i].bias = nn[i]["bias"]
+            nnOut[i].upper = nn[i]["upper"]
+            nnOut[i].lower = nn[i]["lower"]
+            if (haskey(nn[i], "activation"))
+                nnOut[i].activation = nn[i]["activation"]
+            end
+        elseif (nn[i]["type"]  == "denseBin")
+            nnOut[i] = DenseBinLayer()
+            nnOut[i].weights = nn[i]["weights"]
+            nnOut[i].bias = nn[i]["bias"]
+            if (haskey(nn[i], "activation"))
+                nnOut[i].activation = nn[i]["activation"]
+            end
+        elseif (nn[i]["type"]  == "conv2dSign")
+            nnOut[i] = Conv2dLayer()
+            nnOut[i].weights = nn[i]["weights"]
+            nnOut[i].bias = nn[i]["bias"]
+            nnOut[i].upper = nn[i]["upper"]
+            nnOut[i].lower = nn[i]["lower"]
+            nnOut[i].padding = nn[i]["padding"]
+            nnOut[i].strides = Tuple{Int64, Int64}(nn[i]["strides"])
+            # Only support Sign() at this point
+            nnOut[i].activation = "Sign"
+        elseif (nn[i]["type"]  == "conv2dBinSign")
+            nnOut[i] = conv2dBinLayer()
+            nnOut[i].weights = nn[i]["weights"]
+            nnOut[i].bias = nn[i]["bias"]
+            nnOut[i].padding = nn[i]["padding"]
+            nnOut[i].strides = Tuple{Int64, Int64}(nn[i]["strides"])
+            # Only support Sign() at this point
+            nnOut[i].activation = "Sign"
+        else
+            error("Not supported layer!")
+        end
+    end
+    return nnOut
 end

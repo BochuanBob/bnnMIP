@@ -28,21 +28,18 @@ function keepOnlyKEntriesSeq(mat, k::Int64)
     return mat
 end
 
-function forwardProp(image::Array, nn)
+function forwardProp(image::Array, nn::Array{NNLayer, 1})
     xCurrent = image
     for i in 1:length(nn)
-        if (nn[i]["type"] == "flatten")
+        if (typeof(nn[i]) == FlattenLayer)
             xCurrent = flatten(xCurrent)
-        elseif (nn[i]["type"] == "dense" || nn[i]["type"] == "denseBin")
-            takeSign = false
-            if (haskey(nn[i], "activation"))
-                takeSign = (nn[i]["activation"] == "Sign")
-            end
-            xCurrent = dense(xCurrent, nn[i]["weights"],
-                        nn[i]["bias"], takeSign)
-        elseif (nn[i]["type"] == "conv2dSign" || nn[i]["type"] == "conv2dBinSign")
-            xCurrent = conv2d(xCurrent, nn[i]["weights"],
-                        nn[i]["bias"], nn[i]["strides"], nn[i]["padding"])
+        elseif (typeof(nn[i]) == DenseLayer || typeof(nn[i]) == DenseBinLayer)
+            takeSign = (nn[i].activation == "Sign")
+            xCurrent = dense(xCurrent, nn[i].weights,
+                        nn[i].bias, takeSign)
+        elseif (typeof(nn[i]) == Conv2dLayer || typeof(nn[i]) == Conv2dBinLayer)
+            xCurrent = conv2d(xCurrent, nn[i].weights,
+                        nn[i].bias, nn[i].strides, nn[i].padding)
             xCurrent = signFun.(xCurrent)
         else
             error("Not supported layer!")

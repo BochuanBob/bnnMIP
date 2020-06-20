@@ -134,7 +134,8 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
     return tau, kappa
 end
 
-function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
+function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
+                        xOut::VarOrAff,
                         tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         oneIndicesList::Array{Array{CartesianIndex{3}, 1}, 3},
@@ -145,14 +146,14 @@ function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     (y1Len, y2Len, y3Len) = size(xOut)
     (k1Len, k2Len, channels, filters) = size(weights)
     (s1Len, s2Len) = strides
-    xVal = zeros((x1Len, x2Len, x3Len))
-    for i in 1:x1Len
-        for j in 1:x2Len
-            for k in 1:x3Len
-                xVal[i,j,k] =aff_callback_value(cb_data, xIn[i,j,k])
-            end
-        end
-    end
+    # xVal = zeros((x1Len, x2Len, x3Len))
+    # for i in 1:x1Len
+    #     for j in 1:x2Len
+    #         for k in 1:x3Len
+    #             xVal[i,j,k] =aff_callback_value(cb_data, xIn[i,j,k])
+    #         end
+    #     end
+    # end
     contFlag = true
     yVal = zeros((y1Len, y2Len, y3Len))
     K = 2
@@ -213,7 +214,7 @@ function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
             end
         end
     end
-    return contFlag
+    return yVal, contFlag
 end
 
 function decideViolationConsBin(xVal::Array{Float64, 3}, yVal::Float64,
