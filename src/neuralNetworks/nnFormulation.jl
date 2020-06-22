@@ -1,5 +1,6 @@
 include("layers.jl")
 include("callback.jl")
+include("forwardProp.jl")
 export getBNNoutput
 
 const TESTCONST = Array{Array{Float64,2}, 1}([zeros(100, 100), ones(4,3), zeros(20, 100)])
@@ -93,63 +94,8 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
     # Whether submit the cuts to Gurobi.
     if (cuts)
         # Generate cuts by callback function
-        iter = 0
         function callbackCutsBNN(cb_data)
-            callbackTime = @elapsed begin
-                # iter += 1
-                # if (mod(iter, 10) != 1)
-                #     return
-                # end
-                if (typeof(nn[1]) == FlattenLayer)
-                    xOut = nn[1].xOut
-                    xInVal = aff_callback_value.(Ref(cb_data), xOut)
-                elseif (typeof(nn[1]) == Conv2dLayer)
-                    xIn = nn[1].xIn
-                    xOut = nn[1].xOut
-                    strides = nn[1].strides
-                    xInVal, flag = addConv2dCons!(m, xIn, xOut, nn[1].weights,
-                                    nn[1].tauList, nn[1].kappaList,
-                                    nn[1].nonzeroIndicesList,
-                                    nn[1].uNewList, nn[1].lNewList,
-                                    strides, cb_data, image=image)
-                end
-                nnLen = length(nn)
-                for i in 2:nnLen
-                    if (typeof(nn[i]) == DenseBinLayer && nn[i].takeSign)
-                        xIn = nn[i].xIn
-                        xOut = nn[i].xOut
-                        xInVal, flag = addDenseBinCons!(m, xIn, xInVal,
-                                            xOut, nn[i].tauList,
-                                            nn[i].kappaList,
-                                            nn[i].oneIndicesList,
-                                            nn[i].negOneIndicesList,
-                                            cb_data)
-                    elseif (typeof(nn[i]) == Conv2dBinLayer)
-                        xIn = nn[i].xIn
-                        xOut = nn[i].xOut
-                        strides = nn[i].strides
-                        xInVal, flag = addConv2dBinCons!(m, xIn, xInVal, xOut,
-                                            nn[i].tauList,
-                                            nn[i].kappaList,
-                                            nn[i].oneIndicesList,
-                                            nn[i].negOneIndicesList,
-                                            nn[i].weights, strides,
-                                            cb_data)
-                    elseif (typeof(nn[i]) == DenseLayer && nn[i].takeSign)
-                        xIn = nn[i].xIn
-                        xOut = nn[i].xOut
-                        xInVal, flag = addDenseCons!(m, xIn, xInVal, xOut,
-                                        nn[i].weights,
-                                        nn[i].tauList, nn[i].kappaList,
-                                        nn[i].nonzeroIndicesList,
-                                        nn[i].uNewList, nn[i].lNewList,
-                                        cb_data, image=image)
-                    elseif (typeof(nn[i]) == FlattenLayer)
-                        xInVal = aff_callback_value.(Ref(cb_data), nn[i].xOut)
-                    end
-                end
-            end
-            m.ext[:CALLBACK_TIME].time += callbackTime
+            callbackFunc(m, cb_data, nn, image)
         end
         MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     else
@@ -158,5 +104,81 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
         end
         MOI.set(m, MOI.UserCutCallback(), callback)
     end
+    function heuristicBNN(cb_data)
+        input = aff_callback_value.(Ref(cb_data), nn[1].xIn)
+        output = forwardPropBNN(input, nn)
+        outputLen = length(output)
+        outputVal = input[:]
+        for i in 1:(outputLen-1)
+            append!(outputVal, output[i][:])
+        end
+        outputVar = Array{JuMP.VariableRef, 1}(nn[1].xIn[:])
+        for i in 1:(outputLen-1)
+            if (typeof(nn[i]) != FlattenLayer)
+                append!(outputVar, nn[i].xOut[:])
+            end
+        end
+        status = MOI.submit(
+            m, MOI.HeuristicSolution(cb_data),
+                outputVar,
+                outputVal
+        )
+        println("I submitted a heuristic solution, and the status was: ", status)
+    end
+    MOI.set(m, MOI.HeuristicCallback(), heuristicBNN)
     return y, nn
+end
+
+function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1}, image)
+    callbackTime = @elapsed begin
+        if (typeof(nn[1]) == FlattenLayer)
+            xOut = nn[1].xOut
+            xInVal = aff_callback_value.(Ref(cb_data), xOut)
+        elseif (typeof(nn[1]) == Conv2dLayer)
+            xIn = nn[1].xIn
+            xOut = nn[1].xOut
+            strides = nn[1].strides
+            xInVal, flag = addConv2dCons!(m, xIn, xOut, nn[1].weights,
+                            nn[1].tauList, nn[1].kappaList,
+                            nn[1].nonzeroIndicesList,
+                            nn[1].uNewList, nn[1].lNewList,
+                            strides, cb_data, image=image)
+        end
+        nnLen = length(nn)
+        for i in 2:nnLen
+            if (typeof(nn[i]) == DenseBinLayer && nn[i].takeSign)
+                xIn = nn[i].xIn
+                xOut = nn[i].xOut
+                xInVal, flag = addDenseBinCons!(m, xIn, xInVal,
+                                    xOut, nn[i].tauList,
+                                    nn[i].kappaList,
+                                    nn[i].oneIndicesList,
+                                    nn[i].negOneIndicesList,
+                                    cb_data)
+            elseif (typeof(nn[i]) == Conv2dBinLayer)
+                xIn = nn[i].xIn
+                xOut = nn[i].xOut
+                strides = nn[i].strides
+                xInVal, flag = addConv2dBinCons!(m, xIn, xInVal, xOut,
+                                    nn[i].tauList,
+                                    nn[i].kappaList,
+                                    nn[i].oneIndicesList,
+                                    nn[i].negOneIndicesList,
+                                    nn[i].weights, strides,
+                                    cb_data)
+            elseif (typeof(nn[i]) == DenseLayer && nn[i].takeSign)
+                xIn = nn[i].xIn
+                xOut = nn[i].xOut
+                xInVal, flag = addDenseCons!(m, xIn, xInVal, xOut,
+                                nn[i].weights,
+                                nn[i].tauList, nn[i].kappaList,
+                                nn[i].nonzeroIndicesList,
+                                nn[i].uNewList, nn[i].lNewList,
+                                cb_data, image=image)
+            elseif (typeof(nn[i]) == FlattenLayer)
+                xInVal = aff_callback_value.(Ref(cb_data), nn[i].xOut)
+            end
+        end
+    end
+    m.ext[:CALLBACK_TIME].time += callbackTime
 end
