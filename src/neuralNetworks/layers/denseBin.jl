@@ -4,7 +4,7 @@ export denseBin, addDenseBinCons!
 
 const CUTOFF_DENSE_BIN = 100
 const CUTOFF_DENSE_BIN_PRECUT = 5
-const NONZERO_MAX_DENSE_BIN = 500
+const NONZERO_MAX_DENSE_BIN = 100
 const EXTEND_CUTOFF_DENSE_BIN = 10
 # A fully connected layer with sign() or
 # without activation function.
@@ -12,7 +12,7 @@ const EXTEND_CUTOFF_DENSE_BIN = 10
 function denseBin(m::JuMP.Model, x::VarOrAff,
                weights::Array{Float64, 2}, bias::Array{Float64, 1};
                takeSign=false, image=true, preCut=true,
-               cuts=true, extend=false)
+               cuts=true, extend=false, layer=0)
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -31,6 +31,7 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     if (takeSign)
         z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
+        MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")), z, Ref(layer))
         # y = @expression(m, 2 .* z .- 1)
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
@@ -133,51 +134,54 @@ function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
     contFlag = true
     K = 2
     iter = 0
+
     yVal = aff_callback_value.(Ref(cb_data), xOut)
     for i in 1:yLen
         # if (iter > K)
         #     break
         # end
-        if (-0.99 >= yVal[i] || yVal[i] >= 0.99)
+        if (-1 + 10^(-8) >= yVal[i] || yVal[i] >= 1 - 10^(-8))
             continue
         end
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
         tau, kappa = tauList[i], kappaList[i]
-
         if (nonzeroNum == 0 || tau >= nonzeroNum || kappa <= -nonzeroNum)
             continue
         end
         if (nonzeroNum > NONZERO_MAX_DENSE_BIN)
             continue
         end
-        con1Val, con2Val = decideViolationConsBin(xVal, yVal[i], oneIndices,
+
+        con1Val, con2Val, count1, count2 =
+                    decideViolationConsBin(xVal, yVal[i], oneIndices,
                         negOneIndices, tau, kappa)
+
         m.ext[:TEST_CONSTRAINTS].count += 2
-        if (con1Val > 0.01)
+        if (con1Val > 10^(-8))
+            time = @elapsed begin
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
-                            oneIndices,negOneIndices)
+                            oneIndices,negOneIndices, tau)
+            end
+            m.ext[:BENCH_CONV2D].time += time
             lenI1 = length(I1pos) + length(I1neg)
-            if (lenI1 <= CUTOFF_DENSE_BIN)
-                con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
-                # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
-                MOI.submit(m, MOI.UserCut(cb_data), con1)
-                m.ext[:CUTS].count += 1
-                iter += 1
-            end
+            con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+            m.ext[:CUTS].count += 1
         end
-        if (con2Val > 0.01)
+        if (con2Val > 10^(-8))
+            time = @elapsed begin
             I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
-                            oneIndices,negOneIndices)
-            lenI2 = length(I2pos) + length(I2neg)
-            if (lenI2 <= CUTOFF_DENSE_BIN)
-                con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-                # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
-                MOI.submit(m, MOI.UserCut(cb_data), con2)
-                m.ext[:CUTS].count += 1
-                iter += 1
+                            oneIndices,negOneIndices, kappa)
             end
+            m.ext[:BENCH_CONV2D].time += time
+            lenI2 = length(I2pos) + length(I2neg)
+            con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+            # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+            m.ext[:CUTS].count += 1
         end
     end
     return yVal, contFlag
@@ -188,65 +192,123 @@ function decideViolationConsBin(xVal::Array{Float64, 1}, yVal::Float64,
                         negOneIndices::Array{Int64, 1},
                         tau::Float64, kappa::Float64)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
+    count1 = 0
+    count2 = 0
     # Initially, I = []
     con1Val = (nonzeroNum + tau) * (1+yVal) / 2
     con2Val = (kappa - nonzeroNum) * (1-yVal) / 2
     for i in oneIndices
+        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+            continue
+        end
         delta = xVal[i] - yVal
         if (delta < 0)
             con1Val += delta
+            count1 += 1
         elseif (delta > 0)
             con2Val += delta
+            count2 += 1
         end
     end
     for i in negOneIndices
+        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+            continue
+        end
         delta = -xVal[i] - yVal
         if (delta < 0)
             con1Val += delta
+            count1 += 1
         elseif (delta > 0)
             con2Val += delta
+            count2 += 1
         end
     end
-    return -con1Val, con2Val
+    return -con1Val, con2Val, count1, count2
 end
 
 # Output positive and negative I^1 for the first constraint in Proposition 3.
 function getFirstBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
-                        negOneIndices::Array{Int64, 1})
-    I1pos = Array{Int64, 1}([])
-    I1neg = Array{Int64, 1}([])
+                        negOneIndices::Array{Int64, 1}, tau::Float64)
+    nonzeroNum = length(oneIndices) + length(negOneIndices)
+    I1pos = Array{Int64, 1}(undef, nonzeroNum)
+    I1neg = Array{Int64, 1}(undef, nonzeroNum)
+    count1 = 0
+    count2 = 0
     for i in oneIndices
+        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+            continue
+        end
         if (xVal[i] < yVal)
-            append!(I1pos, i)
+            count1 += 1
+            I1pos[count1] = i
         end
     end
     for i in negOneIndices
+        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+            continue
+        end
         if (-xVal[i] < yVal)
-            append!(I1neg, i)
+            count2 += 1
+            I1neg[count2] = i
         end
     end
 
+    # if (2*(count1 + count2) > nonzeroNum + tau + 1)
+    #     change = 2*(count1 + count2) - (nonzeroNum + tau + 1)
+    #     change = Int64(floor(0.5 * change))
+    #     if (count1 < change)
+    #         count1 = 0
+    #         count2 -= (change - count1)
+    #     else
+    #         count1 -= change
+    #     end
+    # end
+
+    I1pos = I1pos[1:count1]
+    I1neg = I1neg[1:count2]
     return I1pos, I1neg
 end
 
 # Output positive and negative I^2 for the second constraint in Proposition 3.
 function getSecondBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
-                        negOneIndices::Array{Int64, 1})
-    I2pos = Array{Int64, 1}([])
-    I2neg = Array{Int64, 1}([])
+                        negOneIndices::Array{Int64, 1}, kappa::Float64)
+    nonzeroNum = length(oneIndices) + length(negOneIndices)
+    I2pos = Array{Int64, 1}(undef, nonzeroNum)
+    I2neg = Array{Int64, 1}(undef, nonzeroNum)
+    count1 = 0
+    count2 = 0
     for i in oneIndices
+        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+            continue
+        end
         if (xVal[i] > yVal)
-            append!(I2pos, i)
+            count1 += 1
+            I2pos[count1] = i
         end
     end
     for i in negOneIndices
+        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+            continue
+        end
         if (-xVal[i] > yVal)
-            append!(I2neg, i)
+            count2 += 1
+            I2neg[count2] = i
         end
     end
-
+    # if (2*(count1 + count2) > nonzeroNum - kappa + 1)
+    #     change = 2*(count1 + count2) - (nonzeroNum - kappa + 1)
+    #     change = Int64(floor(0.5 * change))
+    #     if (count1 < change)
+    #         count1 = 0
+    #         count2 -= (change - count1)
+    #     else
+    #         count1 -= change
+    #     end
+    # end
+    I2pos = I2pos[1:count1]
+    I2neg = I2neg[1:count2]
     return I2pos, I2neg
 end
 

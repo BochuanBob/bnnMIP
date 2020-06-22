@@ -3,15 +3,15 @@ include("activation.jl")
 include("denseSetup.jl")
 export dense, addDenseCons!
 
-const CUTOFF_DENSE = 100
+const CUTOFF_DENSE = 10
 const CUTOFF_DENSE_PRECUT = 5
-const NONZERO_MAX_DENSE = 1000
+const NONZERO_MAX_DENSE = 100
 const EXTEND_CUTOFF_DENSE = 10
 # The MIP formulation for general dense layer
 function dense(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1},
                upper::Array{V, 1}, lower::Array{W, 1};
-               actFunc="", image=true, preCut=true, extend=false
+               actFunc="", image=true, preCut=true, extend=false, layer=0,
                ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     initNN!(m)
     count = m.ext[:NN].count
@@ -32,6 +32,7 @@ function dense(m::JuMP.Model, x::VarOrAff,
     if (actFunc=="Sign")
         z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
+        MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")), z, Ref(layer))
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
         @constraint(m, 2 .* z .- 1 .== y)
@@ -69,7 +70,7 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
         else
             @constraint(m, yi == -1)
         end
-        return b, b, nonzeroIndices, zeros(0), zeros(0)
+        return b, b, nonzeroIndices, upper, lower
     end
     if (image)
         wSum = sum(wVec)
@@ -93,7 +94,7 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                         for i in 1:nonzeroNum) + (kappa/2) * (-yi+1) <= 0)
         @constraint(m, sum(weightVec[nonzeroList[i]] * (x[nonzeroList[i]]-x1[i])
                         for i in 1:nonzeroNum) + (tau/2) * (yi+1) >= 0)
-        return tau, kappa, nonzeroIndices, zeros(0), zeros(0)
+        return tau, kappa, nonzeroIndices, upper, lower
     end
     uNew, lNew = transformProc(negIndices, upper, lower)
     if (preCut && (nonzeroNum <= CUTOFF_DENSE_PRECUT) )
@@ -113,7 +114,7 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
                             ((sum(w[i]*uNew[i] for i in Iset) +
                             sum(w[i]*lNew[i] for i in IsetC) + kappa) * (1 - yi)) )
     end
-    return tau, kappa, nonzeroIndices, uNew[nonzeroIndices], lNew[nonzeroIndices]
+    return tau, kappa, nonzeroIndices, uNew, lNew
 end
 
 
@@ -132,9 +133,12 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
     # end
     contFlag = true
 
+    yVal = zeros(yLen)
     K = 2
     iter = 0
+
     yVal = aff_callback_value.(Ref(cb_data), xOut)
+    return yVal, contFlag
     for i in 1:yLen
         # if (iter > K)
         #     break
@@ -148,48 +152,42 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
         if (nonzeroNum == 0 || nonzeroNum > NONZERO_MAX_DENSE)
             continue
         end
-        time = @elapsed begin
-        wVecNonzero = weights[i, nonzeroIndices]
+        wVec = weights[i, :]
         tau, kappa = tauList[i], kappaList[i]
-        uNewNonzero, lNewNonzero = uNewList[i], lNewList[i]
-        xValNonzero = xVal[nonzeroIndices]
+        uNew, lNew = uNewList[i], lNewList[i]
 
-        con1Val, con2Val = decideViolationCons(xValNonzero, yVal[i], nonzeroNum,
-                            wVecNonzero, tau, kappa, uNewNonzero,lNewNonzero)
-        end
+        con1Val, con2Val, count1, count2 =
+                        decideViolationCons(xVal, yVal[i],nonzeroIndices,
+                            wVec, tau, kappa, uNew,lNew)
         m.ext[:TEST_CONSTRAINTS].count += 2
-        m.ext[:BENCH_CONV2D].time += time
-        if (con1Val > 0.01)
-            I1 = getFirstCutIndices(xValNonzero, yVal[i], nonzeroNum, wVecNonzero,
-                                    uNewNonzero, lNewNonzero)
-            if (length(I1) <= CUTOFF_DENSE)
-                con1 = getFirstCon(xIn[nonzeroIndices], xOut[i], I1,
-                            nonzeroNum, wVecNonzero, tau,
-                            uNewNonzero,lNewNonzero)
-
-                # assertFirstCon(xVal, yVal[i], I1,
-                #             nonzeroIndices, wVec, tau, uNew, lNew)
-                MOI.submit(m, MOI.UserCut(cb_data), con1)
-                m.ext[:CUTS].count += 1
-                iter += 1
+        if (con1Val > 10^(-8))
+            time = @elapsed begin
+            I1 = getFirstCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
+                                    uNew,lNew)
             end
-
+            m.ext[:BENCH_CONV2D].time += time
+            con1 = getFirstCon(xIn, xOut[i], I1,
+                        nonzeroIndices, wVec, tau, uNew, lNew)
+            # assertFirstCon(xVal, yVal[i], I1,
+            #             nonzeroIndices, wVec, tau, uNew, lNew)
+            MOI.submit(m, MOI.UserCut(cb_data), con1)
+            m.ext[:CUTS].count += 1
+            iter += 1
         end
-        if (con2Val > 0.01)
-            I2 = getSecondCutIndices(xValNonzero, yVal[i],nonzeroNum,wVecNonzero,
-                                    uNewNonzero, lNewNonzero)
-            if (length(I2) <= CUTOFF_DENSE)
-                con2 = getSecondCon(xIn[nonzeroIndices], xOut[i], I2,
-                            nonzeroNum, wVecNonzero,
-                            kappa, uNewNonzero,lNewNonzero)
-                # assertSecondCon(xVal, yVal[i], I2,
-                #             nonzeroIndices, wVec, kappa, uNew, lNew)
-                MOI.submit(m, MOI.UserCut(cb_data), con2)
-                m.ext[:CUTS].count += 1
-                iter += 1
+        if (con2Val > 10^(-8))
+            time = @elapsed begin
+            I2 = getSecondCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
+                                    uNew,lNew)
             end
+            m.ext[:BENCH_CONV2D].time += time
+            con2 = getSecondCon(xIn, xOut[i], I2,
+                        nonzeroIndices, wVec, kappa, uNew, lNew)
+            # assertSecondCon(xVal, yVal[i], I2,
+            #             nonzeroIndices, wVec, kappa, uNew, lNew)
+            MOI.submit(m, MOI.UserCut(cb_data), con2)
+            m.ext[:CUTS].count += 1
+            iter += 1
         end
-
     end
 
     return yVal, contFlag
@@ -209,55 +207,74 @@ function transformProc(negIndices::Array{Int64, 1},
 end
 
 function decideViolationCons(xVal::Array{Float64, 1}, yVal::Float64,
-                        nonzeroNum::Int64,
+                        nonzeroIndices::Array{Int64, 1},
                         w::Array{Float64, 1}, tau::Float64, kappa::Float64,
                         upper::Array{Float64, 1}, lower::Array{Float64, 1}
                         )
     # Initially, I = []
-    con1Val = 2 * (sum(w .* upper) + tau) -
-                (sum(w .* upper) + tau) * (1 - yVal)
-    con2Val = -(sum(w .* lower) + kappa) * (1 - yVal)
-
-    con1Delta = 2 .* w .* (xVal .- upper) .- w .* (lower .- upper) .* (1 - yVal)
-    con2Delta = 2 .* w .* (upper .- xVal) .- w .* (upper .- lower) .* (1 - yVal)
-    con1Val += sum(min.(0, con1Delta))
-    con2Val += sum(min.(0, con2Delta))
-    # for i in 1:nonzeroNum
-    #     con1Delta = 2*w[i]*(xVal[i] - upper[i]) - w[i]*(lower[i]-upper[i])*(1-yVal)
-    #     con2Delta = 2*w[i]*(upper[i]-xVal[i]) - w[i]*(upper[i]-lower[i])*(1-yVal)
-    #     con1Val = con1Val + min(0, con1Delta)
-    #     con2Val = con2Val + min(0, con2Delta)
-    # end
-    return -con1Val, -con2Val
+    count1, count2 = 0, 0
+    con1Val = 2 * (sum(w[i] * upper[i] for i in nonzeroIndices) + tau) -
+                (sum(w[i] * upper[i] for i in nonzeroIndices) + tau) * (1 - yVal)
+    con2Val = - (sum(w[i] * lower[i] for i in nonzeroIndices) + kappa) * (1 - yVal)
+    for i in nonzeroIndices
+        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+            continue
+        end
+        con1Delta = 2*w[i]*(xVal[i] - upper[i]) - w[i]*(lower[i]-upper[i])*(1-yVal)
+        con2Delta = 2*w[i]*(upper[i]-xVal[i]) - w[i]*(upper[i]-lower[i])*(1-yVal)
+        if con1Delta < 0
+            con1Val += con1Delta
+            count1 += 1
+        end
+        if con2Delta < 0
+            con2Val += con2Delta
+            count2 += 1
+        end
+    end
+    return -con1Val, -con2Val, count1, count2
 end
 
 # Output I^1 for the first constraint in Proposition 1
 function getFirstCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
-                        nonzeroNum::Int64,
+                        nonzeroIndices::Array{Int64, 1},
                         w::Array{Float64, 1},
                         upper::Array{Float64, 1}, lower::Array{Float64, 1}
                         )
-    I1 = Array{Int64, 1}([])
-    for i in 1:nonzeroNum
+    nonzeroNum = length(nonzeroIndices)
+    I1 = Array{Int64, 1}(undef, nonzeroNum)
+    count = 0
+    for i in nonzeroIndices
+        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+            continue
+        end
         if (2*w[i]*(xVal[i] - upper[i]) < w[i]*(lower[i]-upper[i])*(1-yVal))
-            append!(I1, i)
+            count += 1
+            I1[count] = i
         end
     end
+    I1 = I1[1:count]
     return I1
 end
 
 # Output I^2 for the second constraint in Proposition 1
 function getSecondCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
-                        nonzeroNum::Int64,
+                        nonzeroIndices::Array{Int64, 1},
                         w::Array{Float64, 1},
                         upper::Array{Float64, 1}, lower::Array{Float64, 1}
                         )
-    I2 = Array{Int64, 1}([])
-    for i in 1:nonzeroNum
+    nonzeroNum = length(nonzeroIndices)
+    I2 = Array{Int64, 1}(undef, nonzeroNum)
+    count = 0
+    for i in nonzeroIndices
+        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+            continue
+        end
         if (2*w[i]*(upper[i]-xVal[i]) < w[i]*(upper[i]-lower[i])*(1-yVal))
-            append!(I2, i)
+            count += 1
+            I2[count] = i
         end
     end
+    I2 = I2[1:count]
     return I2
 end
 
@@ -265,11 +282,11 @@ end
 # in Proposition 1. An efficient implementation for user cuts.
 function getFirstCon(x::VarOrAff, yi::VarOrAff,
                             Iset::Array{Int64, 1},
-                            nonzeroNum::Int64,
+                            nonzeroIndices::Array{Int64, 1},
                             w::Array{Float64, 1},b::Float64,
                             upper::Array{Float64, 1}, lower::Array{Float64, 1}
                             )
-    IsetC = setdiff(1:nonzeroNum, Iset)
+    IsetC = setdiff(nonzeroIndices, Iset)
     return @build_constraint(2 * (sum(w[i]*x[i] for i in Iset) +
                         sum(w[i] * upper[i] for i in IsetC) + b) >=
                         (sum(w[i]*lower[i] for i in Iset) +
@@ -281,11 +298,11 @@ end
 # in Proposition 1. An efficient implementation for user cuts.
 function getSecondCon(x::VarOrAff, yi::VarOrAff,
                             Iset::Array{Int64, 1},
-                            nonzeroNum::Int64,
+                            nonzeroIndices::Array{Int64, 1},
                             w::Array{Float64, 1},b::Float64,
                             upper::Array{Float64, 1}, lower::Array{Float64, 1}
                             )
-    IsetC = setdiff(1:nonzeroNum, Iset)
+    IsetC = setdiff(nonzeroIndices, Iset)
     return @build_constraint(2 * sum(w[i]*(upper[i] - x[i]) for i in Iset) >=
                         (sum(w[i]*upper[i] for i in Iset) +
                         sum(w[i]*lower[i] for i in IsetC) + b) * (1 - yi)
@@ -293,38 +310,38 @@ function getSecondCon(x::VarOrAff, yi::VarOrAff,
 end
 
 
-# function assertFirstCon(x, yi,
-#                             Iset::Array{Int64, 1},
-#                             nonzeroIndices::Array{Int64, 1},
-#                             w::Array{Float64, 1},b::Float64,
-#                             upper::Array{Float64, 1}, lower::Array{Float64, 1}
-#                             )
-#     # println(2 * (sum(w[Iset] .* x[Iset]) +
-#     #                     sum(w[IsetC] .* upper[IsetC]) + b) -
-#     #                     ((sum(w[Iset] .* lower[Iset]) +
-#     #                     sum(w[IsetC] .* upper[IsetC]) + b) * (1 - yi) ))
-#     IsetC = setdiff(nonzeroIndices, Iset)
-#     @assert(2 * (sum(w[Iset] .* x[Iset]) +
-#                         sum(w[IsetC] .* upper[IsetC]) + b) <
-#                         (sum(w[Iset] .* lower[Iset]) +
-#                         sum(w[IsetC] .* upper[IsetC]) + b) * (1 - yi)
-#                         )
-#     return
-# end
-#
-# function assertSecondCon(x, yi,
-#                             Iset::Array{Int64, 1},
-#                             nonzeroIndices::Array{Int64, 1},
-#                             w::Array{Float64, 1},b::Float64,
-#                             upper::Array{Float64, 1}, lower::Array{Float64, 1}
-#                             )
-#     IsetC = setdiff(nonzeroIndices, Iset)
-#     # println(2 * sum(w[Iset] .* (upper[Iset] - x[Iset])) -
-#     #                     (sum(w[Iset] .* upper[Iset]) +
-#     #                     sum(w[IsetC] .* lower[IsetC]) + b) * (1 - yi) )
-#     @assert(2 * sum(w[Iset] .* (upper[Iset] - x[Iset])) <
-#                         (sum(w[Iset] .* upper[Iset]) +
-#                         sum(w[IsetC] .* lower[IsetC]) + b) * (1 - yi)
-#                         )
-#     return
-# end
+function assertFirstCon(x, yi,
+                            Iset::Array{Int64, 1},
+                            nonzeroIndices::Array{Int64, 1},
+                            w::Array{Float64, 1},b::Float64,
+                            upper::Array{Float64, 1}, lower::Array{Float64, 1}
+                            )
+    # println(2 * (sum(w[Iset] .* x[Iset]) +
+    #                     sum(w[IsetC] .* upper[IsetC]) + b) -
+    #                     ((sum(w[Iset] .* lower[Iset]) +
+    #                     sum(w[IsetC] .* upper[IsetC]) + b) * (1 - yi) ))
+    IsetC = setdiff(nonzeroIndices, Iset)
+    @assert(2 * (sum(w[Iset] .* x[Iset]) +
+                        sum(w[IsetC] .* upper[IsetC]) + b) <
+                        (sum(w[Iset] .* lower[Iset]) +
+                        sum(w[IsetC] .* upper[IsetC]) + b) * (1 - yi)
+                        )
+    return
+end
+
+function assertSecondCon(x, yi,
+                            Iset::Array{Int64, 1},
+                            nonzeroIndices::Array{Int64, 1},
+                            w::Array{Float64, 1},b::Float64,
+                            upper::Array{Float64, 1}, lower::Array{Float64, 1}
+                            )
+    IsetC = setdiff(nonzeroIndices, Iset)
+    # println(2 * sum(w[Iset] .* (upper[Iset] - x[Iset])) -
+    #                     (sum(w[Iset] .* upper[Iset]) +
+    #                     sum(w[IsetC] .* lower[IsetC]) + b) * (1 - yi) )
+    @assert(2 * sum(w[Iset] .* (upper[Iset] - x[Iset])) <
+                        (sum(w[Iset] .* upper[Iset]) +
+                        sum(w[IsetC] .* lower[IsetC]) + b) * (1 - yi)
+                        )
+    return
+end

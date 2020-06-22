@@ -32,7 +32,7 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
             # has entries of -1 and 1.
             xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         denseBin(m, xIn, nn[i].weights, nn[i].bias,
-                        takeSign=takeSign, image=image, preCut=preCut,cuts=cuts)
+                        takeSign=takeSign, image=image, preCut=preCut,cuts=cuts, layer=nnLen - i)
             nn[i].tauList = tauList
             nn[i].kappaList = kappaList
             nn[i].oneIndicesList = oneIndicesList
@@ -46,7 +46,7 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
                         uNewList, lNewList =
                         dense(m, xIn, nn[i].weights, nn[i].bias,
                         nn[i].upper, nn[i].lower,
-                        actFunc=actFunc, image=image, preCut=preCut)
+                        actFunc=actFunc, image=image, preCut=preCut, layer=nnLen - i)
             nn[i].tauList = tauList
             nn[i].kappaList = kappaList
             nn[i].nonzeroIndicesList = nonzeroIndicesList
@@ -96,14 +96,13 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
         iter = 0
         function callbackCutsBNN(cb_data)
             callbackTime = @elapsed begin
-                iter += 1
+                # iter += 1
                 # if (mod(iter, 10) != 1)
                 #     return
                 # end
                 if (typeof(nn[1]) == FlattenLayer)
                     xOut = nn[1].xOut
                     xInVal = aff_callback_value.(Ref(cb_data), xOut)
-
                 elseif (typeof(nn[1]) == Conv2dLayer)
                     xIn = nn[1].xIn
                     xOut = nn[1].xOut
@@ -147,9 +146,6 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
                                         cb_data, image=image)
                     elseif (typeof(nn[i]) == FlattenLayer)
                         xInVal = aff_callback_value.(Ref(cb_data), nn[i].xOut)
-                        # for j in 1:xLen
-                        #
-                        # end
                     end
                 end
             end
