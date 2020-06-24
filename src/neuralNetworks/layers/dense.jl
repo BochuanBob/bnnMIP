@@ -46,12 +46,13 @@ function dense(m::JuMP.Model, x::VarOrAff,
     elseif (actFunc == "")
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
+        z = y
         @constraint(m, [i=1:yLen], y[i] ==
                     bias[i] + sum(weights[i,j] * x[j] for j in 1:xLen))
     else
         error("Not supported activation functions for dense layer.")
     end
-    return y, tauList, kappaList, nonzeroIndicesList, uNewList, lNewList
+    return y, z, tauList, kappaList, nonzeroIndicesList, uNewList, lNewList
 end
 
 # A MIP formulation for a single neuron.
@@ -137,7 +138,10 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
     K = 2
     iter = 0
 
+    time = @elapsed begin
     yVal = aff_callback_value.(Ref(cb_data), xOut)
+    end
+    m.ext[:BENCH_CONV2D].time += time
     return yVal, contFlag
     for i in 1:yLen
         # if (iter > K)
@@ -161,11 +165,8 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
                             wVec, tau, kappa, uNew,lNew)
         m.ext[:TEST_CONSTRAINTS].count += 2
         if (con1Val > 10^(-8))
-            time = @elapsed begin
             I1 = getFirstCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew)
-            end
-            m.ext[:BENCH_CONV2D].time += time
             con1 = getFirstCon(xIn, xOut[i], I1,
                         nonzeroIndices, wVec, tau, uNew, lNew)
             # assertFirstCon(xVal, yVal[i], I1,
@@ -175,11 +176,8 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
             iter += 1
         end
         if (con2Val > 10^(-8))
-            time = @elapsed begin
             I2 = getSecondCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew)
-            end
-            m.ext[:BENCH_CONV2D].time += time
             con2 = getSecondCon(xIn, xOut[i], I2,
                         nonzeroIndices, wVec, kappa, uNew, lNew)
             # assertSecondCon(xVal, yVal[i], I2,

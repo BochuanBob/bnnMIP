@@ -1,25 +1,38 @@
-function forwardPropBNN(input::Array{Float64}, nn::Array{NNLayer, 1})
+function forwardPropBNN(input::Array{Float64}, nn::Array{NNLayer, 1}, varLen::Int64)
     nnLen = length(nn)
-    output = Array{Array{Float64}, 1}(undef, nnLen)
+    inputLen = length(input)
+    output = Array{Float64, 1}(undef, varLen + inputLen + 10)
+    count = 1
     xCurrent = input
     for i in 1:nnLen
         if (typeof(nn[i]) == FlattenLayer)
             xCurrent = flatten(xCurrent)
-            output[i] = Array{Float64, 1}([])
         elseif (typeof(nn[i]) == DenseLayer || typeof(nn[i]) == DenseBinLayer)
+            if (typeof(nn[i]) == DenseLayer)
+                xCurrent = min.(xCurrent, nn[i].upper)
+                xCurrent = max.(xCurrent, nn[i].lower)
+                output[(varLen+1):(varLen+inputLen)] = xCurrent
+            end
             takeSign = (nn[i].activation == "Sign")
             xCurrent = dense(xCurrent, nn[i].weights,
                         nn[i].bias, takeSign)
-            output[i] = floor.(xCurrent)
+            if (takeSign)
+                xLen = length(xCurrent)
+                output[count:(count+xLen-1)] = (xCurrent .+ 1) / 2
+                count += xLen
+            end
         elseif (typeof(nn[i]) == Conv2dLayer || typeof(nn[i]) == Conv2dBinLayer)
             xCurrent = conv2d(xCurrent, nn[i].weights,
                         nn[i].bias, nn[i].strides, nn[i].padding)
             xCurrent = signFun.(xCurrent)
-            output[i] = floor.(xCurrent)
+            xLen = length(xCurrent)
+            output[count:(count+xLen-1)] = (xCurrent[:] .+ 1) / 2
+            count += xLen
         else
             error("Not supported layer!")
         end
     end
+    output[(varLen + inputLen + 1):(varLen + inputLen + 10)] = xCurrent
     return output
 end
 

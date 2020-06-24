@@ -19,11 +19,16 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
     xIn = x
     xOut = nothing
     xOnes = false
+    upper=nothing
+    lower = nothing
+    xInList = Array{VarOrAff, 1}(undef, nnLen)
+    xOutList = Array{VarOrAff, 1}(undef, nnLen)
+    zList = Array{JuMP.VariableRef, 1}([])
     for i in 1:nnLen
         if (typeof(nn[i]) == FlattenLayer)
             xOut = flatten(m, xIn)
-            nn[i].xIn = xIn
-            nn[i].xOut = xOut
+            xInList[i] = xIn
+            xOutList[i] = xOut
         # elseif (nn[i]["type"] == "activation")
         #     xOut = activation1D(m, xIn, nn[i]["function"],
         #             upper = nn[i]["upper"], lower = nn[i]["lower"])
@@ -31,7 +36,7 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
             takeSign = (nn[i].activation == "Sign")
             # After the first sign() function, the input of each binary layer
             # has entries of -1 and 1.
-            xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
+            xOut, z, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         denseBin(m, xIn, nn[i].weights, nn[i].bias,
                         takeSign=takeSign, image=image, preCut=preCut,cuts=cuts, layer=nnLen - i)
             nn[i].tauList = tauList
@@ -39,11 +44,14 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
             nn[i].oneIndicesList = oneIndicesList
             nn[i].negOneIndicesList = negOneIndicesList
             nn[i].takeSign = takeSign
-            nn[i].xIn = xIn
-            nn[i].xOut = xOut
+            xInList[i] = xIn
+            xOutList[i] = xOut
+            if (takeSign)
+                append!(zList, z)
+            end
         elseif (typeof(nn[i]) == DenseLayer)
             actFunc = nn[i].activation
-            xOut, tauList, kappaList, nonzeroIndicesList,
+            xOut, z, tauList, kappaList, nonzeroIndicesList,
                         uNewList, lNewList =
                         dense(m, xIn, nn[i].weights, nn[i].bias,
                         nn[i].upper, nn[i].lower,
@@ -55,8 +63,13 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
             nn[i].lNewList = lNewList
             nn[i].takeSign = (actFunc=="Sign")
             println("Dense: ", nn[i].takeSign)
-            nn[i].xIn = xIn
-            nn[i].xOut = xOut
+            xInList[i] = xIn
+            xOutList[i] = xOut
+            upper = nn[i].upper
+            lower = nn[i].lower
+            if (nn[i].takeSign)
+                append!(zList, z)
+            end
         elseif (typeof(nn[i]) == Conv2dLayer)
             strides = nn[i].strides
             xOut, tauList, kappaList, nonzeroIndicesList,
@@ -69,8 +82,11 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
             nn[i].nonzeroIndicesList = nonzeroIndicesList
             nn[i].uNewList = uNewList
             nn[i].lNewList = lNewList
-            nn[i].xIn = xIn
-            nn[i].xOut = xOut
+            xInList[i] = xIn
+            xOutList[i] = xOut
+            upper = nn[i].upper
+            lower = nn[i].lower
+            append!(zList, z[:])
         elseif (typeof(nn[i]) == Conv2dBinLayer)
             # After the first sign() function, the input of each binary layer
             # has entries of -1 and 1.
@@ -83,8 +99,9 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
             nn[i].kappaList = kappaList
             nn[i].oneIndicesList = oneIndicesList
             nn[i].negOneIndicesList = negOneIndicesList
-            nn[i].xIn = xIn
-            nn[i].xOut = xOut
+            xInList[i] = xIn
+            xOutList[i] = xOut
+            append!(zList, z[:])
         else
             error("Not support layer.")
         end
@@ -95,48 +112,60 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1}, x::VarOrAff; cuts=tr
     if (cuts)
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            callbackFunc(m, cb_data, nn, image)
+            # for i in 1:3
+            #     xOut = xOutList[i]
+            #     time = @elapsed begin
+            #     # xInVal = aff_callback_value.(Ref(cb_data), xOut)
+            #     for i in 1:length(xOut)
+            #         xOut[i]
+            #     end
+            #     end
+            #     m.ext[:BENCH_CONV2D].time += time
+            # end
+            callbackFunc(m, cb_data, nn, image, xInList, xOutList)
         end
-        MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
+        # MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     else
         function callback(cb_data)
             return
         end
         MOI.set(m, MOI.UserCutCallback(), callback)
     end
+    iter = 1
     function heuristicBNN(cb_data)
-        input = aff_callback_value.(Ref(cb_data), nn[1].xIn)
-        output = forwardPropBNN(input, nn)
-        outputLen = length(output)
-        outputVal = input[:]
-        for i in 1:(outputLen-1)
-            append!(outputVal, output[i][:])
-        end
-        outputVar = Array{JuMP.VariableRef, 1}(nn[1].xIn[:])
-        for i in 1:(outputLen-1)
-            if (typeof(nn[i]) != FlattenLayer)
-                append!(outputVar, nn[i].xOut[:])
-            end
-        end
+        input = aff_callback_value.(Ref(cb_data), xInList[1])
+        outputVal = forwardPropBNN(input, nn, length(zList))
+        append!(zList, flatten(xInList[1]))
+        append!(zList, xOutList[nnLen])
+        time = @elapsed begin
         status = MOI.submit(
             m, MOI.HeuristicSolution(cb_data),
-                outputVar,
+                zList,
                 outputVal
         )
-        println("I submitted a heuristic solution, and the status was: ", status)
+        end
+        m.ext[:TEST_CONSTRAINTS].count += 1
+        m.ext[:BENCH_CONV2D].time += time
+        if (status == MOI.HEURISTIC_SOLUTION_ACCEPTED)
+            println("I submitted a heuristic solution, and the status was: ", status)
+        end
     end
     MOI.set(m, MOI.HeuristicCallback(), heuristicBNN)
     return y, nn
 end
 
-function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1}, image)
+function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1}, image::Bool,
+                    xInList::Array{VarOrAff, 1}, xOutList::Array{VarOrAff, 1})
     callbackTime = @elapsed begin
         if (typeof(nn[1]) == FlattenLayer)
-            xOut = nn[1].xOut
+            xOut = xOutList[1]
+            time = @elapsed begin
             xInVal = aff_callback_value.(Ref(cb_data), xOut)
+            end
+            m.ext[:BENCH_CONV2D].time += time
         elseif (typeof(nn[1]) == Conv2dLayer)
-            xIn = nn[1].xIn
-            xOut = nn[1].xOut
+            xIn = xInList[1]
+            xOut = xOutList[1]
             strides = nn[1].strides
             xInVal, flag = addConv2dCons!(m, xIn, xOut, nn[1].weights,
                             nn[1].tauList, nn[1].kappaList,
@@ -147,8 +176,8 @@ function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1}, image)
         nnLen = length(nn)
         for i in 2:nnLen
             if (typeof(nn[i]) == DenseBinLayer && nn[i].takeSign)
-                xIn = nn[i].xIn
-                xOut = nn[i].xOut
+                xIn = xInList[i]
+                xOut = xOutList[i]
                 xInVal, flag = addDenseBinCons!(m, xIn, xInVal,
                                     xOut, nn[i].tauList,
                                     nn[i].kappaList,
@@ -156,8 +185,8 @@ function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1}, image)
                                     nn[i].negOneIndicesList,
                                     cb_data)
             elseif (typeof(nn[i]) == Conv2dBinLayer)
-                xIn = nn[i].xIn
-                xOut = nn[i].xOut
+                xIn = xInList[i]
+                xOut = xOutList[i]
                 strides = nn[i].strides
                 xInVal, flag = addConv2dBinCons!(m, xIn, xInVal, xOut,
                                     nn[i].tauList,
@@ -167,8 +196,8 @@ function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1}, image)
                                     nn[i].weights, strides,
                                     cb_data)
             elseif (typeof(nn[i]) == DenseLayer && nn[i].takeSign)
-                xIn = nn[i].xIn
-                xOut = nn[i].xOut
+                xIn = xInList[i]
+                xOut = xOutList[i]
                 xInVal, flag = addDenseCons!(m, xIn, xInVal, xOut,
                                 nn[i].weights,
                                 nn[i].tauList, nn[i].kappaList,
@@ -176,7 +205,10 @@ function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1}, image)
                                 nn[i].uNewList, nn[i].lNewList,
                                 cb_data, image=image)
             elseif (typeof(nn[i]) == FlattenLayer)
-                xInVal = aff_callback_value.(Ref(cb_data), nn[i].xOut)
+                time = @elapsed begin
+                xInVal = aff_callback_value.(Ref(cb_data), xOutList[i])
+                end
+                m.ext[:BENCH_CONV2D].time += time
             end
         end
     end

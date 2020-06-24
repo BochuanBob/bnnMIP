@@ -24,6 +24,7 @@ mutable struct Conv2dLayer
     lNewList::Array{Array{Float64, 1}, 3}
     xIn::VarOrAff
     xOut::VarOrAff
+    z::VarOrAff
     Conv2dLayer() = new((0,0),Array{Float64, 4}(undef, (0,0,0,0)),
                     Array{Float64, 1}(undef, 0),
                     Array{Float64, 3}(undef, (0,0,0)),
@@ -36,6 +37,7 @@ mutable struct Conv2dLayer
                     Array{Array{CartesianIndex{3}, 1}, 3}(undef, (0,0,0)),
                     Array{Array{Float64, 1}, 3}(undef, (0,0,0)),
                     Array{Array{Float64, 1}, 3}(undef, (0,0,0)),
+                    Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0)
                     )
@@ -53,6 +55,7 @@ mutable struct Conv2dBinLayer
     negOneIndicesList::Array{Array{CartesianIndex{3}, 1}, 3}
     xIn::VarOrAff
     xOut::VarOrAff
+    z::VarOrAff
     Conv2dBinLayer() = new(Array{Float64, 4}(undef, (0,0,0,0)),
                     Array{Float64, 1}(undef, 0),
                     (0,0),
@@ -62,6 +65,7 @@ mutable struct Conv2dBinLayer
                     Array{Float64, 1}(undef, 0),
                     Array{Array{CartesianIndex{3}, 1}, 3}(undef, (0,0,0)),
                     Array{Array{CartesianIndex{3}, 1}, 3}(undef, (0,0,0)),
+                    Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0)
                     )
@@ -81,6 +85,7 @@ mutable struct DenseLayer
     takeSign::Bool
     xIn::VarOrAff
     xOut::VarOrAff
+    z::VarOrAff
     DenseLayer() = new(Array{Float64, 2}(undef, (0,0)),
                     Array{Float64, 1}(undef, 0),
                     Array{Float64, 1}(undef, 0),
@@ -92,6 +97,7 @@ mutable struct DenseLayer
                     Array{Array{Float64, 1}, 1}(undef, 0),
                     Array{Array{Float64, 1}, 1}(undef, 0),
                     false,
+                    Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0)
                     )
@@ -108,6 +114,7 @@ mutable struct DenseBinLayer
     takeSign::Bool
     xIn::VarOrAff
     xOut::VarOrAff
+    z::VarOrAff
     DenseBinLayer() = new(Array{Float64, 2}(undef, (0,0)),
                     Array{Float64, 1}(undef, 0),
                     "",
@@ -116,6 +123,7 @@ mutable struct DenseBinLayer
                     Array{Array{Int64, 1}, 1}(undef, 0),
                     Array{Array{Int64, 1}, 1}(undef, 0),
                     false,
+                    Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0),
                     Array{VariableRef, 1}(undef, 0)
                     )

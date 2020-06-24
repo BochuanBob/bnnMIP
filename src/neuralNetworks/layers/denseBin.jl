@@ -44,10 +44,11 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     else
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
+        z = y
         @constraint(m, [i=1:yLen], y[i] ==
                     bias[i] + sum(weights[i,j] * x[j] for j in 1:xLen))
     end
-    return y, tauList, kappaList, oneIndicesList, negOneIndicesList
+    return y, z, tauList, kappaList, oneIndicesList, negOneIndicesList
 end
 
 # A MIP formulation for a single neuron.
@@ -135,7 +136,10 @@ function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
     K = 2
     iter = 0
 
+    time = @elapsed begin
     yVal = aff_callback_value.(Ref(cb_data), xOut)
+    end
+    m.ext[:BENCH_CONV2D].time += time
     for i in 1:yLen
         # if (iter > K)
         #     break
@@ -160,11 +164,8 @@ function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
 
         m.ext[:TEST_CONSTRAINTS].count += 2
         if (con1Val > 10^(-8))
-            time = @elapsed begin
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, tau)
-            end
-            m.ext[:BENCH_CONV2D].time += time
             lenI1 = length(I1pos) + length(I1neg)
             con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
             # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
@@ -172,11 +173,8 @@ function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
             m.ext[:CUTS].count += 1
         end
         if (con2Val > 10^(-8))
-            time = @elapsed begin
             I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, kappa)
-            end
-            m.ext[:BENCH_CONV2D].time += time
             lenI2 = length(I2pos) + length(I2neg)
             con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
             # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
