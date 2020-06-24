@@ -1,4 +1,4 @@
-using JuMP
+using JuMP, Gurobi
 using Random
 using CSV
 using DataFrames

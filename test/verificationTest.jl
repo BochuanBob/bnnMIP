@@ -1,4 +1,4 @@
-using JuMP
+using JuMP, Gurobi
 using Random
 using CSV
 using DataFrames
@@ -25,7 +25,7 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 50
+timeLimit = 100
 
 for epsilon in epsilonList
     for method in ["UserCuts"]

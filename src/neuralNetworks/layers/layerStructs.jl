@@ -2,8 +2,8 @@ include("layerSetup.jl")
 
 mutable struct FlattenLayer
     inputSize::NTuple{N, Int} where {N}
-    xIn::VarOrAff
-    xOut::VarOrAff
+    xIn::Array{VariableRef}
+    xOut::Array{VariableRef, 1}
     FlattenLayer() = new((0,0), Array{VariableRef, 1}(undef, 0),
     Array{VariableRef, 1}(undef, 0))
 end
@@ -37,9 +37,9 @@ mutable struct Conv2dLayer
                     Array{Array{CartesianIndex{3}, 1}, 3}(undef, (0,0,0)),
                     Array{Array{Float64, 1}, 3}(undef, (0,0,0)),
                     Array{Array{Float64, 1}, 3}(undef, (0,0,0)),
-                    Array{VariableRef, 1}(undef, 0),
-                    Array{VariableRef, 1}(undef, 0),
-                    Array{VariableRef, 1}(undef, 0)
+                    Array{VariableRef, 3}(undef, (0,0,0)),
+                    Array{VariableRef, 3}(undef, (0,0,0)),
+                    Array{VariableRef, 3}(undef, (0,0,0))
                     )
 end
 
@@ -65,9 +65,9 @@ mutable struct Conv2dBinLayer
                     Array{Float64, 1}(undef, 0),
                     Array{Array{CartesianIndex{3}, 1}, 3}(undef, (0,0,0)),
                     Array{Array{CartesianIndex{3}, 1}, 3}(undef, (0,0,0)),
-                    Array{VariableRef, 1}(undef, 0),
-                    Array{VariableRef, 1}(undef, 0),
-                    Array{VariableRef, 1}(undef, 0)
+                    Array{VariableRef, 3}(undef, (0,0,0)),
+                    Array{VariableRef, 3}(undef, (0,0,0)),
+                    Array{VariableRef, 3}(undef, (0,0,0))
                     )
 end
 
@@ -83,9 +83,9 @@ mutable struct DenseLayer
     uNewList::Array{Array{Float64, 1}, 1}
     lNewList::Array{Array{Float64, 1}, 1}
     takeSign::Bool
-    xIn::VarOrAff
-    xOut::VarOrAff
-    z::VarOrAff
+    xIn::Array{VariableRef, 1}
+    xOut::Array{VariableRef, 1}
+    z::Array{VariableRef, 1}
     DenseLayer() = new(Array{Float64, 2}(undef, (0,0)),
                     Array{Float64, 1}(undef, 0),
                     Array{Float64, 1}(undef, 0),
@@ -112,9 +112,9 @@ mutable struct DenseBinLayer
     oneIndicesList::Array{Array{Int64, 1}, 1}
     negOneIndicesList::Array{Array{Int64, 1}, 1}
     takeSign::Bool
-    xIn::VarOrAff
-    xOut::VarOrAff
-    z::VarOrAff
+    xIn::Array{VariableRef, 1}
+    xOut::Array{VariableRef, 1}
+    z::Array{VariableRef, 1}
     DenseBinLayer() = new(Array{Float64, 2}(undef, (0,0)),
                     Array{Float64, 1}(undef, 0),
                     "",

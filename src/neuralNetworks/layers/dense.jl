@@ -119,14 +119,14 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
 end
 
 
-function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
-                        xOut::VarOrAff,
+function addDenseCons!(m::JuMP.Model, xIn::Array{VariableRef, 1}, xVal::Array{Float64, 1},
+                        xOut::Array{VariableRef, 1},
                         weights::Array{Float64, 2},tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         nonzeroIndicesList::Array{Array{Int64, 1}},
                         uNewList::Array{Array{Float64, 1}, 1},
                         lNewList::Array{Array{Float64, 1}, 1},
-                        cb_data; image=true)
+                        cb_data)
     yLen, xLen = length(xOut), length(xIn)
     # xVal = zeros(xLen)
     # for j in 1:xLen
@@ -139,7 +139,7 @@ function addDenseCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
     iter = 0
 
     time = @elapsed begin
-    yVal = aff_callback_value.(Ref(cb_data), xOut)
+    yVal = JuMP.callback_value.(Ref(cb_data), xOut)
     end
     m.ext[:BENCH_CONV2D].time += time
     return yVal, contFlag

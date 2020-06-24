@@ -121,8 +121,8 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     return tau, kappa, oneIndices, negOneIndices
 end
 
-function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
-                        xOut::VarOrAff,
+function addDenseBinCons!(m::JuMP.Model,xIn::Array{VariableRef, 1},xVal::Array{Float64, 1},
+                        xOut::Array{VariableRef, 1},
                         tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         oneIndicesList::Array{Array{Int64, 1}, 1},
@@ -137,9 +137,10 @@ function addDenseBinCons!(m::JuMP.Model,xIn::VarOrAff,xVal::Array{Float64, 1},
     iter = 0
 
     time = @elapsed begin
-    yVal = aff_callback_value.(Ref(cb_data), xOut)
+    yVal = JuMP.callback_value.(Ref(cb_data), xOut)
     end
     m.ext[:BENCH_CONV2D].time += time
+    return yVal, contFlag
     for i in 1:yLen
         # if (iter > K)
         #     break

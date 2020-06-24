@@ -151,7 +151,7 @@ function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                         uNewList::Array{Array{Float64, 3}, 3},
                         lNewList::Array{Array{Float64, 3}, 3},
                         strides::Tuple{Int64, Int64},
-                        cb_data; image=true)
+                        cb_data)
     (x1Len, x2Len, x3Len) = size(xIn)
     (y1Len, y2Len, y3Len) = size(xOut)
     (k1Len, k2Len, channels, filters) = size(weights)
