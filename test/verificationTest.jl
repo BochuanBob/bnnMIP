@@ -25,7 +25,7 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 100
+timeLimit = 50
 
 for epsilon in epsilonList
     for method in ["UserCuts"]
@@ -74,7 +74,11 @@ for epsilon in epsilonList
                                     image=true, preCut=preCut)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
-            myOptimize!(backend(m), nnCopy)
+            # @code_warntype nnCopy[1].xOut
+            # # @code_warntype nnCopy
+            # @code_warntype nnCopy[2].nonzeroIndicesList
+            # return
+            optimize!(m)
             println("Sample index: ", sampleIndex[i])
             println("True index: ", trueIndex)
             println("Target index: ", targetIndex)
