@@ -119,35 +119,25 @@ function neuronDenseSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
 end
 
 
-function addDenseCons!(m::JuMP.Model, xIn::Array{VariableRef, 1}, xVal::Array{Float64, 1},
+function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
+                        xIn::Array{VariableRef, 1}, xVal::Array{Float64, 1},
                         xOut::Array{VariableRef, 1},
                         weights::Array{Float64, 2},tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         nonzeroIndicesList::Array{Array{Int64, 1}},
                         uNewList::Array{Array{Float64, 1}, 1},
                         lNewList::Array{Array{Float64, 1}, 1},
-                        cb_data)
+                        cb_data::Gurobi.CallbackData)
     yLen, xLen = length(xOut), length(xIn)
-    # xVal = zeros(xLen)
-    # for j in 1:xLen
-    #     xVal[j] = Float64(JuMP.callback_value(cb_data, xIn[j]))
-    # end
     contFlag = true
 
     yVal = zeros(yLen)
-    K = 2
-    iter = 0
 
-    time = @elapsed begin
-    yVal = JuMP.callback_value.(Ref(cb_data), xOut)
+    for i in 1:length(xOut)
+        yVal[i] = my_callback_value(opt, cb_data, xOut[i])
     end
-    m.ext[:BENCH_CONV2D].time += time
     return yVal, contFlag
     for i in 1:yLen
-        # if (iter > K)
-        #     break
-        # end
-
         if (-0.99 >= yVal[i] || yVal[i] >= 0.99)
             continue
         end
@@ -173,7 +163,6 @@ function addDenseCons!(m::JuMP.Model, xIn::Array{VariableRef, 1}, xVal::Array{Fl
             #             nonzeroIndices, wVec, tau, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
-            iter += 1
         end
         if (con2Val > 10^(-8))
             I2 = getSecondCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
@@ -184,7 +173,6 @@ function addDenseCons!(m::JuMP.Model, xIn::Array{VariableRef, 1}, xVal::Array{Fl
             #             nonzeroIndices, wVec, kappa, uNew, lNew)
             MOI.submit(m, MOI.UserCut(cb_data), con2)
             m.ext[:CUTS].count += 1
-            iter += 1
         end
     end
 

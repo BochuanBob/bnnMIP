@@ -121,30 +121,22 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
     return tau, kappa, oneIndices, negOneIndices
 end
 
-function addDenseBinCons!(m::JuMP.Model,xIn::Array{VariableRef, 1},xVal::Array{Float64, 1},
+function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
+                        xIn::Array{VariableRef, 1}, xVal::Array{Float64, 1},
                         xOut::Array{VariableRef, 1},
                         tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         oneIndicesList::Array{Array{Int64, 1}, 1},
-                        negOneIndicesList::Array{Array{Int64, 1}, 1}, cb_data)
+                        negOneIndicesList::Array{Array{Int64, 1}, 1},
+                        cb_data::Gurobi.CallbackData)
     yLen, xLen = length(xOut), length(xIn)
-    # xVal = zeros(xLen)
-    # for j in 1:xLen
-    #     xVal[j] = Float64(aff_callback_value(cb_data, xIn[j]))
-    # end
     contFlag = true
-    K = 2
-    iter = 0
-
-    time = @elapsed begin
-    yVal = JuMP.callback_value.(Ref(cb_data), xOut)
+    yVal = zeros(yLen)
+    for i in 1:length(xOut)
+        yVal[i] = my_callback_value(opt, cb_data, xOut[i])
     end
-    m.ext[:BENCH_CONV2D].time += time
     return yVal, contFlag
     for i in 1:yLen
-        # if (iter > K)
-        #     break
-        # end
         if (-1 + 10^(-8) >= yVal[i] || yVal[i] >= 1 - 10^(-8))
             continue
         end

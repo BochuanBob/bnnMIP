@@ -107,9 +107,10 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
     y = xOut
     # Whether submit the cuts to Gurobi.
     if (cuts)
+        opt = backend(m)::Gurobi.Optimizer
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            callbackFunc(m, cb_data, nn)
+            callbackFunc(m, opt, cb_data, nn)
         end
         MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     else

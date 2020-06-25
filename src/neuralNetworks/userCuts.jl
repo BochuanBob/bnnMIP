@@ -1,16 +1,29 @@
+include("callbacks.jl")
+
 export callbackFunc
 
-function processLayer(m::JuMP.Model, layer::FlattenLayer, cb_data,
+const XIN_EMPTY = Array{Float64, 1}([])
+
+function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
+            layer::FlattenLayer, cb_data::Gurobi.CallbackData,
             xInVal::Array{Float64})
     xOut = layer.xOut
-    time = @elapsed begin
-        xInVal = JuMP.callback_value.(Ref(cb_data), xOut)
+    if (xInVal !== XIN_EMPTY)
+        return xInVal[:]::Array{Float64, 1}
     end
-    m.ext[:BENCH_CONV2D].time += time
-    return xInVal
+    xOutLen = length(xOut)
+    xOutVal = zeros(xOutLen)
+    # time = @elapsed begin
+        for i in 1:xOutLen
+            xOutVal[i] = my_callback_value(opt, cb_data, xOut[i])
+        end
+    # end
+    # m.ext[:BENCH_CONV2D].time += time
+    return xOutVal::Array{Float64, 1}
 end
 
-function processLayer(m::JuMP.Model, layer::Conv2dLayer, cb_data,
+function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
+            layer::Conv2dLayer, cb_data::Gurobi.CallbackData,
             xInVal::Array{Float64})
     xIn = layer.xIn
     xOut = layer.xOut
@@ -23,7 +36,8 @@ function processLayer(m::JuMP.Model, layer::Conv2dLayer, cb_data,
     return xInVal
 end
 
-function processLayer(m::JuMP.Model, layer::Conv2dBinLayer, cb_data,
+function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
+            layer::Conv2dBinLayer, cb_data::Gurobi.CallbackData,
             xInVal::Array{Float64})
     xIn = layer.xIn
     xOut = layer.xOut
@@ -38,14 +52,15 @@ function processLayer(m::JuMP.Model, layer::Conv2dBinLayer, cb_data,
     return xInVal
 end
 
-function processLayer(m::JuMP.Model, layer::DenseLayer, cb_data,
+function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
+            layer::DenseLayer, cb_data::Gurobi.CallbackData,
             xInVal::Array{Float64, 1})
     if (~layer.takeSign)
         return xInVal
     end
     xIn = layer.xIn
     xOut = layer.xOut
-    xInVal, flag = addDenseCons!(m, xIn, xInVal, xOut,
+    xInVal, flag = addDenseCons!(m, opt, xIn, xInVal, xOut,
                     layer.weights,
                     layer.tauList, layer.kappaList,
                     layer.nonzeroIndicesList,
@@ -54,14 +69,15 @@ function processLayer(m::JuMP.Model, layer::DenseLayer, cb_data,
     return xInVal
 end
 
-function processLayer(m::JuMP.Model, layer::DenseBinLayer, cb_data,
+function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
+            layer::DenseBinLayer, cb_data::Gurobi.CallbackData,
             xInVal::Array{Float64, 1})
     if (~layer.takeSign)
         return xInVal
     end
     xIn = layer.xIn
     xOut = layer.xOut
-    xInVal, flag = addDenseBinCons!(m, xIn, xInVal,
+    xInVal, flag = addDenseBinCons!(m, opt, xIn, xInVal,
                         xOut, layer.tauList,
                         layer.kappaList,
                         layer.oneIndicesList,
@@ -71,12 +87,13 @@ function processLayer(m::JuMP.Model, layer::DenseBinLayer, cb_data,
 end
 
 
-function callbackFunc(m::JuMP.Model, cb_data, nn::Array{NNLayer, 1})
+function callbackFunc(m::JuMP.Model, opt::Gurobi.Optimizer,
+                cb_data::Gurobi.CallbackData, nn::Array{NNLayer, 1})
     callbackTime = @elapsed begin
     nnLen = length(nn)
-    xInVal = Array{Float64, 1}([])
+    xInVal = XIN_EMPTY
         for i in 1:nnLen
-            xInVal = processLayer(m, nn[i], cb_data, xInVal)
+            xInVal = processLayer(m, opt, nn[i], cb_data, xInVal)
         end
     end
     m.ext[:CALLBACK_TIME].time += callbackTime
