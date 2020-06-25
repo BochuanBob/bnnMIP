@@ -7,12 +7,12 @@ include("../src/utilities.jl")
 include("../src/verification.jl")
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn2x500AllSparseE12.mat", "nn")
+nn = readNN("../data/nn3F200.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 20
-epsilonList = [0.01]
+epsilonList = [0.08]
 
 Random.seed!(2020)
 # nn[3]["weights"] = keepOnlyKEntriesSeq(nn[3]["weights"], 20)
@@ -28,7 +28,7 @@ end
 timeLimit = 100
 
 for epsilon in epsilonList
-    for method in ["UserCuts"]
+    for method in ["AllCuts"]
         for i in 9:9
             cuts = false
             preCut = false

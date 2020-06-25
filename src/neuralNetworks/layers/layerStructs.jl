@@ -20,8 +20,8 @@ mutable struct Conv2dLayer
     tauList::Array{Float64, 1}
     kappaList::Array{Float64, 1}
     nonzeroIndicesList::Array{Array{CartesianIndex{3}, 1}, 3}
-    uNewList::Array{Array{Float64, 1}, 3}
-    lNewList::Array{Array{Float64, 1}, 3}
+    uNewList::Array{Array{Float64, 3}, 3}
+    lNewList::Array{Array{Float64, 3}, 3}
     xIn::VarOrAff
     xOut::VarOrAff
     z::VarOrAff
@@ -35,8 +35,8 @@ mutable struct Conv2dLayer
                     Array{Float64, 1}(undef, 0),
                     Array{Float64, 1}(undef, 0),
                     Array{Array{CartesianIndex{3}, 1}, 3}(undef, (0,0,0)),
-                    Array{Array{Float64, 1}, 3}(undef, (0,0,0)),
-                    Array{Array{Float64, 1}, 3}(undef, (0,0,0)),
+                    Array{Array{Float64, 3}, 3}(undef, (0,0,0)),
+                    Array{Array{Float64, 3}, 3}(undef, (0,0,0)),
                     Array{VariableRef, 3}(undef, (0,0,0)),
                     Array{VariableRef, 3}(undef, (0,0,0)),
                     Array{VariableRef, 3}(undef, (0,0,0))

@@ -2,7 +2,7 @@ include("layerSetup.jl")
 include("denseSetup.jl")
 export conv2dBinSign
 
-const CUTOFF_CONV2D_BIN = 16
+const CUTOFF_CONV2D_BIN = 100
 const CUTOFF_CONV2D_BIN_PRECUT = 5
 
 # A conv2d layer with sign().
@@ -10,7 +10,8 @@ const CUTOFF_CONV2D_BIN_PRECUT = 5
 function conv2dBinSign(m::JuMP.Model, x::VarOrAff,
                 weights::Array{T, 4}, bias::Array{U, 1},
                 strides::Tuple{Int64, Int64}; padding="valid",
-                image=true, preCut=true, cuts=true) where{T<:Real, U<:Real}
+                image=true, preCut=true, cuts=true, layer=0
+                ) where{T<:Real, U<:Real}
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -55,7 +56,14 @@ function conv2dBinSign(m::JuMP.Model, x::VarOrAff,
     end
     z = @variable(m, [1:y1Len, 1:y2Len, 1:y3Len], binary=true,
                 base_name="z_$count")
-    y = @expression(m, 2 .* z .- 1)
+    # y = @expression(m, 2 .* z .- 1)
+    # if (cuts)
+    #     MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")),
+    #             z, Ref(layer))
+    # end
+    y = @variable(m, [1:y1Len, 1:y2Len, 1:y3Len],
+                base_name="y_$count")
+    @constraint(m, 2 .* z .- 1 .== y)
     for i in 1:y1Len
         for j in 1:y2Len
             for k in 1:y3Len
@@ -75,7 +83,7 @@ function conv2dBinSign(m::JuMP.Model, x::VarOrAff,
             end
         end
     end
-    return y, tauList, kappaList, oneIndicesList, negOneIndicesList
+    return y, z, tauList, kappaList, oneIndicesList, negOneIndicesList
 end
 
 # A MIP formulation for a single neuron.
@@ -110,10 +118,10 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
         @constraint(m, yijk == -1)
         return tau, kappa
     end
-    if ((preCut || cuts) && (nonzeroNum <= CUTOFF_CONV2D_BIN_PRECUT))
-        (var, _) = collect(yijk.terms)[1]
-        MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1)
-    end
+    # if ((preCut || cuts) && (nonzeroNum <= CUTOFF_CONV2D_BIN_PRECUT))
+    #     (var, _) = collect(yijk.terms)[1]
+    #     MOI.set(m, Gurobi.VariableAttribute("BranchPriority"), var, -1)
+    # end
     if (preCut && (nonzeroNum <= CUTOFF_CONV2D_BIN_PRECUT) )
         IsetAll = collect(powerset(union(oneIndices, negOneIndices)))
         IsetAll = IsetAll[2:length(IsetAll)]
@@ -134,38 +142,26 @@ function neuronSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
     return tau, kappa
 end
 
-function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1},
-                        xOut::VarOrAff,
+function addConv2dBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
+                        xIn::Array{VariableRef, 3},
+                        xVal::Array{Float64, 3},
+                        xOut::Array{VariableRef, 3},
                         tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         oneIndicesList::Array{Array{CartesianIndex{3}, 1}, 3},
                         negOneIndicesList::Array{Array{CartesianIndex{3},1},3},
                         weights::Array{Float64, 4}, strides::Tuple{Int64, Int64},
-                        cb_data)
+                        cb_data::Gurobi.CallbackData)
     (x1Len, x2Len, x3Len) = size(xIn)
     (y1Len, y2Len, y3Len) = size(xOut)
     (k1Len, k2Len, channels, filters) = size(weights)
     (s1Len, s2Len) = strides
-    # xVal = zeros((x1Len, x2Len, x3Len))
-    # for i in 1:x1Len
-    #     for j in 1:x2Len
-    #         for k in 1:x3Len
-    #             xVal[i,j,k] =aff_callback_value(cb_data, xIn[i,j,k])
-    #         end
-    #     end
-    # end
     contFlag = true
     yVal = zeros((y1Len, y2Len, y3Len))
-    K = 2
-    iter = 0
     for i in 1:y1Len
         for j in 1:y2Len
             for k in 1:y3Len
-                # if (iter > K)
-                #     return contFlag
-                # end
-
-                yVal[i,j,k] = aff_callback_value(cb_data, xOut[i,j,k])
+                yVal[i,j,k] = my_callback_value(opt, cb_data, xOut[i,j,k])
                 if (-0.99 >= yVal[i,j,k] || yVal[i,j,k] >= 0.99)
                     continue
                 end
@@ -176,40 +172,38 @@ function addConv2dBinCons!(m::JuMP.Model, xIn::VarOrAff, xVal::Array{Float64, 1}
                 oneIndices = oneIndicesList[(x1NEnd-x1Start+1),(x2NEnd-x2Start+1),k]
                 negOneIndices = negOneIndicesList[(x1NEnd-x1Start+1),(x2NEnd-x2Start+1),k]
                 nonzeroNum = length(oneIndices) + length(negOneIndices)
-                tau, kappa = tauList[k], kappaList[k]
-                if (nonzeroNum == 0 || tau >= nonzeroNum ||
-                    kappa <= -nonzeroNum)
+
+                if (nonzeroNum == 0 || nonzeroNum > CUTOFF_CONV2D_BIN)
                     continue
                 end
+                tau, kappa = tauList[k], kappaList[k]
+                if (tau >= nonzeroNum || kappa <= -nonzeroNum)
+                    continue
+                end
+
                 xValN = xVal[x1Start:x1NEnd,
                         x2Start:x2NEnd, :]
                 xInN = xIn[x1Start:x1NEnd,
                         x2Start:x2NEnd, :]
                 con1Val, con2Val = decideViolationConsBin(xValN, yVal[i,j,k],
                                 oneIndices, negOneIndices, tau, kappa)
-                if (con1Val > 0)
+                if (con1Val > 0.01)
                     I1pos, I1neg = getFirstBinCutIndices(xValN, yVal[i,j,k],
                                     oneIndices,negOneIndices)
                     lenI1 = length(I1pos) + length(I1neg)
-                    if (lenI1 <= CUTOFF_CONV2D_BIN)
-                        con1 = getFirstBinCon(xInN,xOut[i,j,k],I1pos,
-                                        I1neg,lenI1,nonzeroNum,tau)
-                        MOI.submit(m, MOI.UserCut(cb_data), con1)
-                        m.ext[:CUTS].count += 1
-                        iter += 1
-                    end
+                    con1 = getFirstBinCon(xInN,xOut[i,j,k],I1pos,
+                                    I1neg,lenI1,nonzeroNum,tau)
+                    MOI.submit(m, MOI.UserCut(cb_data), con1)
+                    m.ext[:CUTS].count += 1
                 end
-                if (con2Val > 0)
+                if (con2Val > 0.01)
                     I2pos, I2neg = getSecondBinCutIndices(xValN, yVal[i,j,k],
                                     oneIndices,negOneIndices)
                     lenI2 = length(I2pos) + length(I2neg)
-                    if (lenI2 <= CUTOFF_CONV2D_BIN)
-                        con2 = getSecondBinCon(xInN,xOut[i,j,k],I2pos,I2neg,
-                                        lenI2,nonzeroNum,kappa)
-                        MOI.submit(m, MOI.UserCut(cb_data), con2)
-                        m.ext[:CUTS].count += 1
-                        iter += 1
-                    end
+                    con2 = getSecondBinCon(xInN,xOut[i,j,k],I2pos,I2neg,
+                                    lenI2,nonzeroNum,kappa)
+                    MOI.submit(m, MOI.UserCut(cb_data), con2)
+                    m.ext[:CUTS].count += 1
                 end
             end
         end
@@ -227,6 +221,9 @@ function decideViolationConsBin(xVal::Array{Float64, 3}, yVal::Float64,
     con2Val = (kappa - nonzeroNum) * (1-yVal) / 2
     for idx in oneIndices
         delta = xVal[idx] - yVal
+        if (xVal[idx]<= 1 - 10^(-8) && xVal[idx] >= -1 + 10^(-8))
+            continue
+        end
         if (delta < 0)
             con1Val += delta
         elseif (delta > 0)
@@ -235,6 +232,9 @@ function decideViolationConsBin(xVal::Array{Float64, 3}, yVal::Float64,
     end
     for idx in negOneIndices
         delta = -xVal[idx] - yVal
+        if (xVal[idx]<= 1 - 10^(-8) && xVal[idx] >= -1 + 10^(-8))
+            continue
+        end
         if (delta < 0)
             con1Val += delta
         elseif (delta > 0)
@@ -249,19 +249,32 @@ function getFirstBinCutIndices(xVal::Array{Float64, 3}, yVal::Float64,
                         oneIndices::Array{CartesianIndex{3}, 1},
                         negOneIndices::Array{CartesianIndex{3}, 1}
                         )
-    I1pos = Array{CartesianIndex{3}, 1}([])
-    I1neg = Array{CartesianIndex{3}, 1}([])
+    oneNum = length(oneIndices)
+    negOneNum = length(negOneIndices)
+    I1pos = Array{CartesianIndex{3}, 1}(undef, oneNum)
+    I1neg = Array{CartesianIndex{3}, 1}(undef, negOneNum)
+    count1 = 0
+    count2 = 0
     for idx in oneIndices
+        if (xVal[idx]<= 1 - 10^(-8) && xVal[idx] >= -1 + 10^(-8))
+            continue
+        end
         if (xVal[idx] < yVal)
-            I1pos = vcat(I1pos, idx)
+            count1 += 1
+            I1pos[count1] = idx
         end
     end
     for idx in negOneIndices
+        if (xVal[idx]<= 1 - 10^(-8) && xVal[idx] >= -1 + 10^(-8))
+            continue
+        end
         if (-xVal[idx] < yVal)
-            I1neg = vcat(I1neg, idx)
+            count2 += 1
+            I1neg[count2] = idx
         end
     end
-
+    I1pos = I1pos[1:count1]
+    I1neg = I1neg[1:count2]
     return I1pos, I1neg
 end
 
@@ -270,19 +283,32 @@ function getSecondBinCutIndices(xVal::Array{Float64, 3}, yVal::Float64,
                         oneIndices::Array{CartesianIndex{3}, 1},
                         negOneIndices::Array{CartesianIndex{3}, 1}
                         )
-    I2pos = Array{CartesianIndex{3}, 1}([])
-    I2neg = Array{CartesianIndex{3}, 1}([])
+    oneNum = length(oneIndices)
+    negOneNum = length(negOneIndices)
+    I2pos = Array{CartesianIndex{3}, 1}(undef, oneNum)
+    I2neg = Array{CartesianIndex{3}, 1}(undef, negOneNum)
+    count1 = 0
+    count2 = 0
     for idx in oneIndices
+        if (xVal[idx]<= 1 - 10^(-8) && xVal[idx] >= -1 + 10^(-8))
+            continue
+        end
         if (xVal[idx] > yVal)
-            I2pos = vcat(I2pos, idx)
+            count1 += 1
+            I2pos[count1] = idx
         end
     end
     for idx in negOneIndices
+        if (xVal[idx]<= 1 - 10^(-8) && xVal[idx] >= -1 + 10^(-8))
+            continue
+        end
         if (-xVal[idx] > yVal)
-            I2neg = vcat(I2neg, idx)
+            count2 += 1
+            I2neg[count2] = idx
         end
     end
-
+    I2pos = I2pos[1:count1]
+    I2neg = I2neg[1:count2]
     return I2pos, I2neg
 end
 

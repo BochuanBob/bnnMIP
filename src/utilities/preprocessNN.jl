@@ -62,12 +62,13 @@ function getNNLayerArray(nn)
             nnOut[i].bias = nn[i]["bias"]
             nnOut[i].upper = nn[i]["upper"]
             nnOut[i].lower = nn[i]["lower"]
+            nnOut[i].inputSize = nn[i]["inputSize"]
             nnOut[i].padding = nn[i]["padding"]
             nnOut[i].strides = Tuple{Int64, Int64}(nn[i]["strides"])
             # Only support Sign() at this point
             nnOut[i].activation = "Sign"
         elseif (nn[i]["type"]  == "conv2dBinSign")
-            nnOut[i] = conv2dBinLayer()
+            nnOut[i] = Conv2dBinLayer()
             nnOut[i].weights = nn[i]["weights"]
             nnOut[i].bias = nn[i]["bias"]
             nnOut[i].padding = nn[i]["padding"]

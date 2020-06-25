@@ -35,7 +35,8 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
             # has entries of -1 and 1.
             xOut, z, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         denseBin(m, xIn, nn[i].weights, nn[i].bias,
-                        takeSign=takeSign, image=image, preCut=preCut,cuts=cuts, layer=nnLen - i)
+                        takeSign=takeSign, image=image, preCut=preCut,
+                        cuts=cuts, layer=nnLen - i)
             nn[i].tauList = tauList
             nn[i].kappaList = kappaList
             nn[i].oneIndicesList = oneIndicesList
@@ -52,7 +53,8 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
                         uNewList, lNewList =
                         dense(m, xIn, nn[i].weights, nn[i].bias,
                         nn[i].upper, nn[i].lower,
-                        actFunc=actFunc, image=image, preCut=preCut, layer=nnLen - i)
+                        actFunc=actFunc, image=image, preCut=preCut, cuts=cuts,
+                        layer=nnLen - i)
             nn[i].tauList = tauList
             nn[i].kappaList = kappaList
             nn[i].nonzeroIndicesList = nonzeroIndicesList
@@ -69,11 +71,12 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
             end
         elseif (typeof(nn[i]) == Conv2dLayer)
             strides = nn[i].strides
-            xOut, tauList, kappaList, nonzeroIndicesList,
+            xOut, z, tauList, kappaList, nonzeroIndicesList,
                         uNewList, lNewList =
                         conv2dSign(m, xIn, nn[i].weights, nn[i].bias,
                         strides, nn[i].upper, nn[i].lower,
-                        padding=nn[i].padding, image=image, preCut=preCut)
+                        padding=nn[i].padding, image=image, preCut=preCut,
+                        layer=nnLen - i, cuts=cuts)
             nn[i].tauList = tauList
             nn[i].kappaList = kappaList
             nn[i].nonzeroIndicesList = nonzeroIndicesList
@@ -88,10 +91,11 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
             # After the first sign() function, the input of each binary layer
             # has entries of -1 and 1.
             strides = nn[i].strides
-            xOut, tauList, kappaList, oneIndicesList, negOneIndicesList =
+            xOut, z, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         conv2dBinSign(m, xIn, nn[i].weights, nn[i].bias,
                         strides, padding=nn[i].padding,
-                        image=image, preCut=preCut,cuts=cuts)
+                        image=image, preCut=preCut,cuts=cuts,
+                        layer=nnLen - i)
             nn[i].tauList = tauList
             nn[i].kappaList = kappaList
             nn[i].oneIndicesList = oneIndicesList

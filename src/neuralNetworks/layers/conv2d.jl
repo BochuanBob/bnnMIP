@@ -3,7 +3,7 @@ include("activation.jl")
 include("denseSetup.jl")
 export conv2dSign
 
-const CUTOFF_CONV2D = 16
+const CUTOFF_CONV2D = 100
 const CUTOFF_CONV2D_PRECUT = 5
 
 # The MIP formulation for general conv2d layer
@@ -11,7 +11,7 @@ function conv2dSign(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 4}, bias::Array{U, 1},
                strides::Tuple{Int64, Int64},
                upper::Array{V, 3}, lower::Array{W, 3};
-               padding="valid", image=true, preCut=true
+               padding="valid", image=true, preCut=true, layer=0, cuts=true
                ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     initNN!(m)
     count = m.ext[:NN].count
@@ -56,7 +56,14 @@ function conv2dSign(m::JuMP.Model, x::VarOrAff,
     lNewList = Array{Array{Float64, 3}, 3}(undef, outputSize)
     z = @variable(m, [1:y1Len, 1:y2Len, 1:y3Len], binary=true,
                 base_name="z_$count")
-    y = @expression(m, 2 .* z .- 1)
+    # y = @expression(m, 2 .* z .- 1)
+    # if (cuts)
+    #     MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")),
+    #             z, Ref(layer))
+    # end
+    y = @variable(m, [1:y1Len, 1:y2Len, 1:y3Len],
+                base_name="y_$count")
+    @constraint(m, 2 .* z .- 1 .== y)
     for i in 1:y1Len
         for j in 1:y2Len
             for k in 1:y3Len
@@ -82,7 +89,7 @@ function conv2dSign(m::JuMP.Model, x::VarOrAff,
             end
         end
     end
-    return y, tauList, kappaList, nonzeroIndicesList, uNewList, lNewList
+    return y, z, tauList, kappaList, nonzeroIndicesList, uNewList, lNewList
 end
 
 # A MIP formulation for a single neuron.
@@ -111,6 +118,16 @@ function neuronConv2dSign(m::JuMP.Model, x::VarOrAff, yijk::VarOrAff,
         end
         return tau, kappa, upper, lower
     end
+
+    if (tau >= nonzeroNum)
+        @constraint(m, yijk == 1)
+        return tau, kappa, upper, lower
+    end
+    if (kappa <= -nonzeroNum)
+        @constraint(m, yijk == -1)
+        return tau, kappa, upper, lower
+    end
+
     uNew, lNew = transformProc(negIndices, upper, lower)
     if (preCut && (nonzeroNum <= CUTOFF_CONV2D_PRECUT) )
         IsetAll = collect(powerset(nonzeroIndices))
@@ -144,14 +161,16 @@ function transformProc(negIndices::Array{CartesianIndex{3}, 1},
     return Float64.(upperNew), Float64.(lowerNew)
 end
 
-function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
+function addConv2dCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
+                        xIn::Array{VariableRef, 3},
+                        xOut::Array{VariableRef, 3},
                         weights::Array{Float64, 4},tauList::Array{Float64, 1},
                         kappaList::Array{Float64, 1},
                         nonzeroIndicesList::Array{Array{CartesianIndex{3}, 1}, 3},
                         uNewList::Array{Array{Float64, 3}, 3},
                         lNewList::Array{Array{Float64, 3}, 3},
                         strides::Tuple{Int64, Int64},
-                        cb_data)
+                        cb_data::Gurobi.CallbackData)
     (x1Len, x2Len, x3Len) = size(xIn)
     (y1Len, y2Len, y3Len) = size(xOut)
     (k1Len, k2Len, channels, filters) = size(weights)
@@ -160,22 +179,16 @@ function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
     for i in 1:x1Len
         for j in 1:x2Len
             for k in 1:x3Len
-                xVal[i,j,k] = JuMP.callback_value(cb_data, xIn[i,j,k])
+                xVal[i,j,k] = my_callback_value(opt, cb_data, xIn[i,j,k])
             end
         end
     end
     contFlag = true
     yVal = zeros((y1Len, y2Len, y3Len))
-    K = 2
-    iter = 0
     for i in 1:y1Len
         for j in 1:y2Len
             for k in 1:y3Len
-                # if (iter > K)
-                #     return contFlag
-                # end
-                # idy = CartesianIndex{3}(i,j,k)
-                yVal[i,j,k] = aff_callback_value(cb_data, xOut[i,j,k])
+                yVal[i,j,k] = my_callback_value(opt, cb_data, xOut[i,j,k])
                 if (-0.99 >= yVal[i,j,k] || yVal[i,j,k] >= 0.99)
                     continue
                 end
@@ -185,11 +198,14 @@ function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                 x2NEnd = min(x2Len, x2End)
                 nonzeroIndices = nonzeroIndicesList[(x1NEnd-x1Start+1),(x2NEnd-x2Start+1),k]
                 nonzeroNum = length(nonzeroIndices)
-                if (nonzeroNum == 0)
+                if (nonzeroNum == 0 || nonzeroNum > CUTOFF_CONV2D)
+                    continue
+                end
+                tau, kappa = tauList[k], kappaList[k]
+                if (tau >= nonzeroNum || kappa <= -nonzeroNum)
                     continue
                 end
                 wVec = weights[:, :, :, k]
-                tau, kappa = tauList[k], kappaList[k]
                 uNew, lNew = uNewList[i,j,k], lNewList[i,j,k]
                 xValN = xVal[x1Start:x1NEnd,
                         x2Start:x2NEnd, :]
@@ -198,27 +214,21 @@ function addConv2dCons!(m::JuMP.Model, xIn::VarOrAff, xOut::VarOrAff,
                 con1Val, con2Val = decideViolationCons(xValN, yVal[i,j,k],nonzeroIndices,
                                     wVec, tau, kappa, uNew,lNew)
 
-                if (con1Val > 0)
+                if (con1Val > 0.01)
                     I1 = getFirstCutIndices(xValN, yVal[i,j,k],nonzeroIndices,wVec,
                                             uNew,lNew)
-                    if (length(I1) <= CUTOFF_CONV2D)
-                        con1 = getFirstCon(xInN, xOut[i,j,k], I1,
-                                    nonzeroIndices, wVec, tau, uNew, lNew)
-                        MOI.submit(m, MOI.UserCut(cb_data), con1)
-                        m.ext[:CUTS].count += 1
-                        iter += 1
-                    end
+                    con1 = getFirstCon(xInN, xOut[i,j,k], I1,
+                                nonzeroIndices, wVec, tau, uNew, lNew)
+                    MOI.submit(m, MOI.UserCut(cb_data), con1)
+                    m.ext[:CUTS].count += 1
                 end
-                if (con2Val > 0)
+                if (con2Val > 0.01)
                     I2 = getSecondCutIndices(xValN, yVal[i,j,k],nonzeroIndices,wVec,
                                             uNew,lNew)
-                    if (length(I2) <= CUTOFF_CONV2D)
-                        con2 = getSecondCon(xInN, xOut[i,j,k], I2,
-                                    nonzeroIndices, wVec, kappa, uNew, lNew)
-                        MOI.submit(m, MOI.UserCut(cb_data), con2)
-                        m.ext[:CUTS].count += 1
-                        iter += 1
-                    end
+                    con2 = getSecondCon(xInN, xOut[i,j,k], I2,
+                                nonzeroIndices, wVec, kappa, uNew, lNew)
+                    MOI.submit(m, MOI.UserCut(cb_data), con2)
+                    m.ext[:CUTS].count += 1
                 end
             end
         end
@@ -236,6 +246,9 @@ function decideViolationCons(xVal::Array{Float64, 3}, yVal::Float64,
                 (sum(w[i] * upper[i] for i in nonzeroIndices) + tau) * (1 - yVal)
     con2Val = - (sum(w[i] * lower[i] for i in nonzeroIndices) + kappa) * (1 - yVal)
     for i in nonzeroIndices
+        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+            continue
+        end
         con1Delta = 2*w[i]*(xVal[i] - upper[i]) - w[i]*(lower[i]-upper[i])*(1-yVal)
         con2Delta = 2*w[i]*(upper[i]-xVal[i]) - w[i]*(upper[i]-lower[i])*(1-yVal)
         con1Val = con1Val + min(0, con1Delta)
@@ -250,12 +263,19 @@ function getFirstCutIndices(xVal::Array{Float64, 3}, yVal::Float64,
                         w::Array{Float64, 3},
                         upper::Array{Float64, 3}, lower::Array{Float64, 3}
                         )
-    I1 = Array{CartesianIndex{3},1}([])
+    nonzeroNum = length(nonzeroIndices)
+    I1 = Array{CartesianIndex{3},1}(undef, nonzeroNum)
+    count = 0
     for i in nonzeroIndices
+        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+            continue
+        end
         if (2*w[i]*(xVal[i] - upper[i]) < w[i]*(lower[i]-upper[i])*(1-yVal))
-            I1 = vcat(I1, i)
+            count += 1
+            I1[count] = i
         end
     end
+    I1 = I1[1:count]
     return I1
 end
 
@@ -265,12 +285,19 @@ function getSecondCutIndices(xVal::Array{Float64, 3}, yVal::Float64,
                         w::Array{Float64, 3},
                         upper::Array{Float64, 3}, lower::Array{Float64, 3}
                         )
-    I2 = Array{CartesianIndex{3},1}([])
+    nonzeroNum = length(nonzeroIndices)
+    I2 = Array{CartesianIndex{3},1}(undef, nonzeroNum)
+    count = 0
     for i in nonzeroIndices
+        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+            continue
+        end
         if (2*w[i]*(upper[i]-xVal[i]) < w[i]*(upper[i]-lower[i])*(1-yVal))
-            I2 = vcat(I2, i)
+            count += 1
+            I2[count] = i
         end
     end
+    I2 = I2[1:count]
     return I2
 end
 

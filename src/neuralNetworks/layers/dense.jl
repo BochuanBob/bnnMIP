@@ -5,13 +5,13 @@ export dense, addDenseCons!
 
 const CUTOFF_DENSE = 10
 const CUTOFF_DENSE_PRECUT = 5
-const NONZERO_MAX_DENSE = 100
+const NONZERO_MAX_DENSE = 1000
 const EXTEND_CUTOFF_DENSE = 10
 # The MIP formulation for general dense layer
 function dense(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1},
                upper::Array{V, 1}, lower::Array{W, 1};
-               actFunc="", image=true, preCut=true, extend=false, layer=0,
+               actFunc="", image=true, preCut=true, extend=false, cuts=true, layer=0,
                ) where{T<:Real, U<:Real, V<:Real, W<:Real}
     initNN!(m)
     count = m.ext[:NN].count
@@ -32,7 +32,10 @@ function dense(m::JuMP.Model, x::VarOrAff,
     if (actFunc=="Sign")
         z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
-        MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")), z, Ref(layer))
+        # if (cuts)
+        #     MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")),
+        #             z, Ref(layer))
+        # end
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
         @constraint(m, 2 .* z .- 1 .== y)
@@ -146,15 +149,18 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
         if (nonzeroNum == 0 || nonzeroNum > NONZERO_MAX_DENSE)
             continue
         end
-        wVec = weights[i, :]
         tau, kappa = tauList[i], kappaList[i]
+        if (tau >= nonzeroNum || kappa <= -nonzeroNum)
+            continue
+        end
+        wVec = weights[i, :]
         uNew, lNew = uNewList[i], lNewList[i]
 
         con1Val, con2Val, count1, count2 =
                         decideViolationCons(xVal, yVal[i],nonzeroIndices,
                             wVec, tau, kappa, uNew,lNew)
         m.ext[:TEST_CONSTRAINTS].count += 2
-        if (con1Val > 10^(-8))
+        if (2 * count1 > nonzeroNum + tau + 1)
             I1 = getFirstCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew)
             con1 = getFirstCon(xIn, xOut[i], I1,
@@ -164,7 +170,7 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (con2Val > 10^(-8))
+        if (2 * count2 > nonzeroNum - kappa + 1)
             I2 = getSecondCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew)
             con2 = getSecondCon(xIn, xOut[i], I2,

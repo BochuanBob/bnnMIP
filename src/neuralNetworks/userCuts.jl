@@ -2,11 +2,11 @@ include("callbacks.jl")
 
 export callbackFunc
 
-const XIN_EMPTY = Array{Float64, 1}([])
+const XIN_EMPTY = Array{Float64, 3}(undef, (0,0,0))
 
 function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
             layer::FlattenLayer, cb_data::Gurobi.CallbackData,
-            xInVal::Array{Float64})
+            xInVal::Array{Float64, 3})
     xOut = layer.xOut
     if (xInVal !== XIN_EMPTY)
         return xInVal[:]::Array{Float64, 1}
@@ -24,25 +24,25 @@ end
 
 function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
             layer::Conv2dLayer, cb_data::Gurobi.CallbackData,
-            xInVal::Array{Float64})
+            xInVal::Array{Float64, 3})
     xIn = layer.xIn
     xOut = layer.xOut
     strides = layer.strides
-    xInVal, flag = addConv2dCons!(m, xIn, xOut, layer.weights,
+    xInVal, flag = addConv2dCons!(m, opt, xIn, xOut, layer.weights,
                     layer.tauList, layer.kappaList,
                     layer.nonzeroIndicesList,
                     layer.uNewList, layer.lNewList,
-                    strides, cb_data, image=image)
+                    strides, cb_data)
     return xInVal
 end
 
 function processLayer(m::JuMP.Model, opt::Gurobi.Optimizer,
             layer::Conv2dBinLayer, cb_data::Gurobi.CallbackData,
-            xInVal::Array{Float64})
+            xInVal::Array{Float64, 3})
     xIn = layer.xIn
     xOut = layer.xOut
     strides = layer.strides
-    xInVal, flag = addConv2dBinCons!(m, xIn, xInVal, xOut,
+    xInVal, flag = addConv2dBinCons!(m, opt, xIn, xInVal, xOut,
                         layer.tauList,
                         layer.kappaList,
                         layer.oneIndicesList,

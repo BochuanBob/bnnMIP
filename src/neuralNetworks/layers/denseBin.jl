@@ -4,7 +4,7 @@ export denseBin, addDenseBinCons!
 
 const CUTOFF_DENSE_BIN = 100
 const CUTOFF_DENSE_BIN_PRECUT = 5
-const NONZERO_MAX_DENSE_BIN = 100
+const NONZERO_MAX_DENSE_BIN = 1000
 const EXTEND_CUTOFF_DENSE_BIN = 10
 # A fully connected layer with sign() or
 # without activation function.
@@ -31,7 +31,10 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
     if (takeSign)
         z = @variable(m, [1:yLen], binary=true,
                     base_name="z_$count")
-        MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")), z, Ref(layer))
+        # if (cuts)
+        #     MOI.set.(Ref(m), Ref(Gurobi.VariableAttribute("BranchPriority")),
+        #             z, Ref(layer))
+        # end
         # y = @expression(m, 2 .* z .- 1)
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
@@ -135,7 +138,7 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
     for i in 1:length(xOut)
         yVal[i] = my_callback_value(opt, cb_data, xOut[i])
     end
-    return yVal, contFlag
+    # return yVal, contFlag
     for i in 1:yLen
         if (-1 + 10^(-8) >= yVal[i] || yVal[i] >= 1 - 10^(-8))
             continue
@@ -143,11 +146,11 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
         oneIndices = oneIndicesList[i]
         negOneIndices = negOneIndicesList[i]
         nonzeroNum = length(oneIndices) + length(negOneIndices)
-        tau, kappa = tauList[i], kappaList[i]
-        if (nonzeroNum == 0 || tau >= nonzeroNum || kappa <= -nonzeroNum)
+        if (nonzeroNum == 0 || nonzeroNum > NONZERO_MAX_DENSE_BIN)
             continue
         end
-        if (nonzeroNum > NONZERO_MAX_DENSE_BIN)
+        tau, kappa = tauList[i], kappaList[i]
+        if (tau >= nonzeroNum || kappa <= -nonzeroNum)
             continue
         end
 
@@ -156,7 +159,7 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                         negOneIndices, tau, kappa)
 
         m.ext[:TEST_CONSTRAINTS].count += 2
-        if (con1Val > 10^(-8))
+        if (2 * count1 > nonzeroNum + tau + 1)
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, tau)
             lenI1 = length(I1pos) + length(I1neg)
@@ -165,7 +168,7 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (con2Val > 10^(-8))
+        if (2 * count2 > nonzeroNum - kappa + 1)
             I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, kappa)
             lenI2 = length(I2pos) + length(I2neg)
@@ -221,9 +224,8 @@ end
 function getFirstBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1}, tau::Float64)
-    nonzeroNum = length(oneIndices) + length(negOneIndices)
-    I1pos = Array{Int64, 1}(undef, nonzeroNum)
-    I1neg = Array{Int64, 1}(undef, nonzeroNum)
+    I1pos = Array{Int64, 1}(undef, length(oneIndices))
+    I1neg = Array{Int64, 1}(undef, length(negOneIndices))
     count1 = 0
     count2 = 0
     for i in oneIndices
@@ -265,9 +267,8 @@ end
 function getSecondBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1}, kappa::Float64)
-    nonzeroNum = length(oneIndices) + length(negOneIndices)
-    I2pos = Array{Int64, 1}(undef, nonzeroNum)
-    I2neg = Array{Int64, 1}(undef, nonzeroNum)
+    I2pos = Array{Int64, 1}(undef, length(oneIndices))
+    I2neg = Array{Int64, 1}(undef, length(negOneIndices))
     count1 = 0
     count2 = 0
     for i in oneIndices
