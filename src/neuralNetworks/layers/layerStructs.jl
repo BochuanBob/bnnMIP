@@ -1,4 +1,5 @@
-include("layerSetup.jl")
+export FlattenLayer, Conv2dLayer, Conv2dBinLayer, DenseLayer, DenseBinLayer,
+        NNLayer
 
 mutable struct FlattenLayer
     inputSize::NTuple{N, Int} where {N}

@@ -1,5 +1,3 @@
-include("layerSetup.jl")
-include("denseSetup.jl")
 export conv2dBinSign
 
 const CUTOFF_CONV2D_BIN = 100
@@ -162,7 +160,13 @@ function addConv2dBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
         for j in 1:y2Len
             for k in 1:y3Len
                 yVal[i,j,k] = my_callback_value(opt, cb_data, xOut[i,j,k])
-                if (-0.99 >= yVal[i,j,k] || yVal[i,j,k] >= 0.99)
+            end
+        end
+    end
+    for i in 1:y1Len
+        for j in 1:y2Len
+            for k in 1:y3Len
+                if (-1 + 10^(-8) >= yVal[i,j,k] || yVal[i,j,k] >= 1 - 10^(-8))
                     continue
                 end
                 x1Start, x1End = 1 + (i-1)*s1Len, (i-1)*s1Len + k1Len
@@ -180,14 +184,13 @@ function addConv2dBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                 if (tau >= nonzeroNum || kappa <= -nonzeroNum)
                     continue
                 end
-
                 xValN = xVal[x1Start:x1NEnd,
                         x2Start:x2NEnd, :]
                 xInN = xIn[x1Start:x1NEnd,
                         x2Start:x2NEnd, :]
-                con1Val, con2Val = decideViolationConsBin(xValN, yVal[i,j,k],
+                con1Val, con2Val, count1, count2 = decideViolationConsBin(xValN, yVal[i,j,k],
                                 oneIndices, negOneIndices, tau, kappa)
-                if (con1Val > 0.01)
+                if (2 * count1 > nonzeroNum + tau + 1)
                     I1pos, I1neg = getFirstBinCutIndices(xValN, yVal[i,j,k],
                                     oneIndices,negOneIndices)
                     lenI1 = length(I1pos) + length(I1neg)
@@ -196,7 +199,7 @@ function addConv2dBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                     MOI.submit(m, MOI.UserCut(cb_data), con1)
                     m.ext[:CUTS].count += 1
                 end
-                if (con2Val > 0.01)
+                if (2 * count2 > nonzeroNum - kappa + 1)
                     I2pos, I2neg = getSecondBinCutIndices(xValN, yVal[i,j,k],
                                     oneIndices,negOneIndices)
                     lenI2 = length(I2pos) + length(I2neg)
@@ -219,6 +222,8 @@ function decideViolationConsBin(xVal::Array{Float64, 3}, yVal::Float64,
     # Initially, I = []
     con1Val = (nonzeroNum + tau) * (1+yVal) / 2
     con2Val = (kappa - nonzeroNum) * (1-yVal) / 2
+    count1 = 0
+    count2 = 0
     for idx in oneIndices
         delta = xVal[idx] - yVal
         if (xVal[idx]<= 1 - 10^(-8) && xVal[idx] >= -1 + 10^(-8))
@@ -226,8 +231,10 @@ function decideViolationConsBin(xVal::Array{Float64, 3}, yVal::Float64,
         end
         if (delta < 0)
             con1Val += delta
+            count1 += 1
         elseif (delta > 0)
             con2Val += delta
+            count2 += 1
         end
     end
     for idx in negOneIndices
@@ -237,11 +244,13 @@ function decideViolationConsBin(xVal::Array{Float64, 3}, yVal::Float64,
         end
         if (delta < 0)
             con1Val += delta
+            count1 += 1
         elseif (delta > 0)
             con2Val += delta
+            count2 += 1
         end
     end
-    return -con1Val, con2Val
+    return -con1Val, con2Val, count1, count2
 end
 
 # Output positive and negative I^1 for the first constraint in Proposition 3.

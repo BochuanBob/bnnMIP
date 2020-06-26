@@ -1,4 +1,4 @@
-using MAT
+export readDataset
 # Read the dataset used to train the neural network.
 function readDataset(fileName::String, trainVarName::String,
                     trainLabelName::String,

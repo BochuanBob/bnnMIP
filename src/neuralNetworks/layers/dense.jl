@@ -1,6 +1,3 @@
-include("layerSetup.jl")
-include("activation.jl")
-include("denseSetup.jl")
 export dense, addDenseCons!
 
 const CUTOFF_DENSE = 10

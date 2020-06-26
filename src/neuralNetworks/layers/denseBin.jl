@@ -1,5 +1,3 @@
-include("layerSetup.jl")
-include("denseSetup.jl")
 export denseBin, addDenseBinCons!
 
 const CUTOFF_DENSE_BIN = 100

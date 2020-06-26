@@ -1,18 +1,21 @@
-using JuMP, Gurobi
+using Pkg
 using Random
 using CSV
 using DataFrames
 
-include("../src/utilities.jl")
-include("../src/verification.jl")
+Pkg.activate("../")
+
+import bnnMIP
+using JuMP, Gurobi, bnnMIP
+
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn3F200.mat", "nn")
+nn = readNN("../data/nnConv2C2FSparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 20
-epsilonList = [0.08]
+epsilonList = [0.03]
 
 Random.seed!(2020)
 # nn[3]["weights"] = keepOnlyKEntriesSeq(nn[3]["weights"], 20)
@@ -25,10 +28,10 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 100
+timeLimit = 10
 
 for epsilon in epsilonList
-    for method in ["AllCuts"]
+    for method in ["NoCuts", "DefaultCuts", "UserCuts"]
         for i in 9:9
             cuts = false
             preCut = false

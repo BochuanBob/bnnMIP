@@ -1,6 +1,3 @@
-include("layerSetup.jl")
-include("activation.jl")
-include("denseSetup.jl")
 export conv2dSign
 
 const CUTOFF_CONV2D = 100
@@ -175,21 +172,28 @@ function addConv2dCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
     (y1Len, y2Len, y3Len) = size(xOut)
     (k1Len, k2Len, channels, filters) = size(weights)
     (s1Len, s2Len) = strides
-    xVal = zeros((x1Len, x2Len, x3Len))
-    for i in 1:x1Len
-        for j in 1:x2Len
-            for k in 1:x3Len
-                xVal[i,j,k] = my_callback_value(opt, cb_data, xIn[i,j,k])
-            end
-        end
-    end
+    # xVal = zeros((x1Len, x2Len, x3Len))
+    # for i in 1:x1Len
+    #     for j in 1:x2Len
+    #         for k in 1:x3Len
+    #             xVal[i,j,k] = my_callback_value(opt, cb_data, xIn[i,j,k])
+    #         end
+    #     end
+    # end
     contFlag = true
     yVal = zeros((y1Len, y2Len, y3Len))
     for i in 1:y1Len
         for j in 1:y2Len
             for k in 1:y3Len
                 yVal[i,j,k] = my_callback_value(opt, cb_data, xOut[i,j,k])
-                if (-0.99 >= yVal[i,j,k] || yVal[i,j,k] >= 0.99)
+            end
+        end
+    end
+    return yVal, contFlag
+    for i in 1:y1Len
+        for j in 1:y2Len
+            for k in 1:y3Len
+                if (-1 + 10^(-8) >= yVal[i,j,k] || yVal[i,j,k] >= 1 - 10^(-8))
                     continue
                 end
                 x1Start, x1End = 1 + (i-1)*s1Len, (i-1)*s1Len + k1Len

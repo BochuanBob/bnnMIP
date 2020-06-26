@@ -1,4 +1,3 @@
-include("layerSetup.jl")
 export flatten
 
 # Take the input variables and ouput a flatten one.

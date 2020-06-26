@@ -1,4 +1,3 @@
-include("layerSetup.jl")
 export activation1D
 
 function activation1D(m::JuMP.Model, x::VarOrAff,

@@ -1,7 +1,5 @@
-using JuMP
 const VarOrAff = Union{JuMP.VariableRef,JuMP.AffExpr,
-                        Array{VariableRef}, Array{AffExpr}}
-using Combinatorics, IterTools
+                        Array{JuMP.VariableRef}, Array{JuMP.AffExpr}}
 export initNN!, aff_callback_value
 
 mutable struct nnData
@@ -34,7 +32,7 @@ function initNN!(m::JuMP.Model)
     return nothing
 end
 
-function aff_callback_value(cb_data, aff::GenericAffExpr{Float64,VariableRef})
+function aff_callback_value(cb_data, aff::JuMP.GenericAffExpr{Float64,JuMP.VariableRef})
    ret = aff.constant
    for (var, coef) in aff.terms
        ret += coef * callback_value(cb_data, var)
@@ -42,6 +40,6 @@ function aff_callback_value(cb_data, aff::GenericAffExpr{Float64,VariableRef})
    return ret
 end
 
-function aff_callback_value(cb_data, aff::VariableRef)
+function aff_callback_value(cb_data, aff::JuMP.VariableRef)
    return JuMP.callback_value(cb_data, aff)
 end

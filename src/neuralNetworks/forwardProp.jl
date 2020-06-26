@@ -1,3 +1,4 @@
+export forwardPropBNN
 function forwardPropBNN(input::Array{Float64}, nn::Array{NNLayer, 1}, varLen::Int64)
     nnLen = length(nn)
     inputLen = length(input)

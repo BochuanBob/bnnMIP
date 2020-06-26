@@ -1,5 +1,3 @@
-using JuMP
-include("neuralNetworks.jl")
 export perturbationVerify
 
 # Minimize the difference of outputs between true index and target index.

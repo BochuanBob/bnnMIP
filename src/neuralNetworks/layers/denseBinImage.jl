@@ -1,5 +1,3 @@
-include("layerSetup.jl")
-include("denseSetup.jl")
 export denseBinImage, addDenseBinImageCons!
 
 # A fully connected layer with sign() or

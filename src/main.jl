@@ -1,10 +1,13 @@
-using JuMP, Gurobi
+using Pkg
 using Random
 using CSV
 using DataFrames
 
-include("utilities.jl")
-include("verification.jl")
+Pkg.activate("../")
+
+import bnnMIP
+using JuMP, Gurobi, bnnMIP
+
 include("../test/testFunc.jl")
 # Inputs
 nn = readNN("../data/nn3F200.mat", "nn")

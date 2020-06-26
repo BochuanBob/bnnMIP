@@ -1,6 +1,3 @@
-using MAT
-include("preprocessNN.jl")
-
 export readNN
 
 # Read the information of the neural network and store it in desired format.
