@@ -107,6 +107,8 @@ end
 mutable struct DenseBinLayer
     weights::Array{Float64, 2}
     bias::Array{Float64, 1}
+    upper::Array{Float64, 1}
+    lower::Array{Float64, 1}
     activation::String
     tauList::Array{Float64, 1}
     kappaList::Array{Float64, 1}
@@ -117,6 +119,8 @@ mutable struct DenseBinLayer
     xOut::Array{VariableRef, 1}
     z::Array{VariableRef, 1}
     DenseBinLayer() = new(Array{Float64, 2}(undef, (0,0)),
+                    Array{Float64, 1}(undef, 0),
+                    Array{Float64, 1}(undef, 0),
                     Array{Float64, 1}(undef, 0),
                     "",
                     Array{Float64, 1}(undef, 0),

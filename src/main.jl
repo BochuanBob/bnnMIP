@@ -10,7 +10,7 @@ using JuMP, Gurobi, bnnMIP
 
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn3F200.mat", "nn")
+nn = readNN("../data/nn2F500Sparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
@@ -25,7 +25,10 @@ for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
 timeLimit = 1800
-methodList = ["NoCuts", "UserCuts", "DefaultCuts", "AllCuts"]
+methodList = ["NoCuts", "UserCuts", "CoverCuts",
+                "DefaultCuts", "AllCuts", "UserCutsCover",
+                "NoCutsForward", "UserCutsForward", "CoverCutsForward",
+                "DefaultCutsForward", "AllCutsForward", "UserCutsCoverForward"]
 
 # Ouputs
 totalLen = length(methodList)*length(epsilonList)*num
@@ -58,6 +61,9 @@ for epsilon in epsilonList
             elseif (method == "DefaultCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1,
                                 TimeLimit=timeLimit, PreCrush=1))
+            elseif (method == "CoverCuts")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0, CoverCuts=1,
+                                TimeLimit=timeLimit, PreCrush=1))
             elseif (method == "AllCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=1,
                                 TimeLimit=timeLimit, PreCrush=1))
@@ -66,6 +72,40 @@ for epsilon in epsilonList
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
                                 TimeLimit=timeLimit, PreCrush=1))
                 cuts = true
+            elseif (method == "UserCutsCover")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1,
+                                CoverCuts=1))
+                cuts = true
+                #, GUBCoverCuts=1, FlowCoverCuts=1
+            elseif (method == "NoCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
+                                TimeLimit=timeLimit))
+                forward = true
+            elseif (method == "CoverCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0, CoverCuts=1,
+                                TimeLimit=timeLimit, PreCrush=1))
+                forward = true
+            elseif (method == "DefaultCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+                                TimeLimit=timeLimit))
+                forward = true
+            elseif (method == "AllCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
+                                Cuts=1, TimeLimit=timeLimit))
+                cuts = true
+                forward = true
+            elseif (method == "UserCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1))
+                cuts = true
+                forward = true
+            elseif (method == "UserCutsCoverForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1,
+                                CoverCuts=1))
+                cuts = true
+                forward = true
             elseif (method == "PreCut")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
                                 TimeLimit=timeLimit))
@@ -87,7 +127,8 @@ for epsilon in epsilonList
             targetIndex=targetIndices[i]
             x, xInt, y, nnCopy = perturbationVerify(m, nn, input, trueIndex,
                                     targetIndex, epsilon, cuts=cuts,
-                                    image=true, integer=false, preCut=preCut)
+                                    image=true, integer=false, preCut=preCut,
+                                    forward=forward)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
             optimize!(m)
@@ -122,4 +163,4 @@ df = DataFrame(Instance=InstanceOut, Samples=sampleIndexList,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
             IterCount=itersOut, callbackTimes=callbackOut,
             submittedCuts=userCutsOut)
-CSV.write("results3F200.csv", df)
+CSV.write("results2F200Ep01.csv", df)

@@ -10,13 +10,18 @@ using JuMP, Gurobi, bnnMIP
 
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nnConv2C2FSparse.mat", "nn")
+nn = readNN("../data/nn2F500Sparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 20
-epsilonList = [0.03]
+epsilonList = [0.08]
 
+for i in 2:4
+    println("Layer ", i, " zero ratios: ", sum(nn[i].weights .== 0) / length(nn[i].weights))
+end
+
+return
 Random.seed!(2020)
 # nn[3]["weights"] = keepOnlyKEntriesSeq(nn[3]["weights"], 20)
 # nn[4]["weights"] = keepOnlyKEntriesSeq(nn[4]["weights"], 20)
@@ -28,19 +33,23 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 10
+timeLimit = 200
 
 for epsilon in epsilonList
-    for method in ["NoCuts", "DefaultCuts", "UserCuts"]
-        for i in 9:9
+    for method in ["UserCutsCoverForward", "UserCutsCover"]
+        for i in 3:3
             cuts = false
             preCut = false
+            forward = false
             if (method == "NoCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
                                 TimeLimit=timeLimit, Threads=4))
             elseif (method == "DefaultCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
                                 TimeLimit=timeLimit, Threads=4))
+            elseif (method == "CoverCuts")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0, CoverCuts=1,
+                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
             elseif (method == "AllCuts")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
                                 Cuts=1, TimeLimit=timeLimit, Threads=4))
@@ -49,6 +58,40 @@ for epsilon in epsilonList
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
                                 TimeLimit=timeLimit, PreCrush=1, Threads=4))
                 cuts = true
+            elseif (method == "UserCutsCover")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1, Threads=4,
+                                CoverCuts=1))
+                cuts = true
+                #, GUBCoverCuts=1, FlowCoverCuts=1
+            elseif (method == "NoCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
+                                TimeLimit=timeLimit, Threads=4))
+                forward = true
+            elseif (method == "CoverCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0, CoverCuts=1,
+                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
+                forward = true
+            elseif (method == "DefaultCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
+                                TimeLimit=timeLimit, Threads=4))
+                forward = true
+            elseif (method == "AllCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
+                                Cuts=1, TimeLimit=timeLimit, Threads=4))
+                cuts = true
+                forward = true
+            elseif (method == "UserCutsForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
+                cuts = true
+                forward = true
+            elseif (method == "UserCutsCoverForward")
+                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
+                                TimeLimit=timeLimit, PreCrush=1, Threads=4,
+                                CoverCuts=1))
+                cuts = true
+                forward = true
             elseif (method == "PreCut")
                 m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
                                 TimeLimit=timeLimit, Threads=4))
@@ -74,7 +117,7 @@ for epsilon in epsilonList
             targetIndex=targetIndices[i]
             x, xInt, y, nnCopy = perturbationVerify(m, nn, input, trueIndex,
                                     targetIndex, epsilon, cuts=cuts,
-                                    image=true, preCut=preCut)
+                                    image=true, preCut=preCut, forward=forward)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
             # @code_warntype nnCopy[1].xOut

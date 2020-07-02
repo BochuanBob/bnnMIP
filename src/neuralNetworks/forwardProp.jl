@@ -1,4 +1,51 @@
-export forwardPropBNN
+export forwardPropBNN, forwardDenseLinear
+
+function signFun(x::Float64)
+    if (x >= 0)
+        return 1.0
+    else
+        return -1.0
+    end
+end
+
+function forwardDenseLinear(nn::Array{NNLayer, 1})
+    nnLen = length(nn)
+    upper = nn[2].upper
+    lower = nn[2].lower
+    for i in 3:nnLen
+        varLen = length(nn[i].upper)
+        weights = nn[i-1].weights
+        bias = nn[i-1].bias
+        for j in 1:varLen
+            w = weights[j, :]
+            uNew, lNew = getUppLow(upper, lower, w)
+            nn[i].upper[j] = signFun(sum(w .* uNew) + bias[j])
+            nn[i].lower[j] = signFun(sum(w .* lNew) + bias[j])
+            @assert nn[i].upper[j] >= nn[i].lower[j]
+        end
+        upper = nn[i].upper
+        lower = nn[i].lower
+    end
+end
+
+function getUppLow(upper::Array{Float64, 1}, lower::Array{Float64, 1},
+                    w::Array{Float64, 1})
+    wLen = length(w)
+    uNew = zeros(wLen)
+    lNew = zeros(wLen)
+    for i in 1:wLen
+        if (w[i] > 0)
+            uNew[i] = upper[i]
+            lNew[i] = lower[i]
+        else
+            uNew[i] = lower[i]
+            lNew[i] = upper[i]
+        end
+    end
+    return uNew, lNew
+end
+
+
 function forwardPropBNN(input::Array{Float64}, nn::Array{NNLayer, 1}, varLen::Int64)
     nnLen = length(nn)
     inputLen = length(input)

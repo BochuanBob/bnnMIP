@@ -8,13 +8,18 @@ export getBNNoutput
 # Otherwise, cuts for the ideal formulation are added to the model.
 function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
             x::Array{JuMP.VariableRef}; cuts=true,
-            image=true, preCut=true)
+            image=true, preCut=true, forward=true)
     initNN!(m)
     count = m.ext[:NN].count
     m.ext[:NN].count += 1
     nnLen = length(nn)
     # Don't want to change the original data.
     # nn = deepcopy(nn)
+    if (forward)
+        forwardDenseLinear(nn)
+        println("Layer ", 3, ": ", sum(nn[3].upper .== nn[3].lower))
+        println("Layer ", 4, ": ", sum(nn[4].upper .== nn[4].lower))
+    end
     xIn = x
     xOut = Array{JuMP.VariableRef, 1}([])
     xOnes = false
@@ -35,8 +40,9 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
             # has entries of -1 and 1.
             xOut, z, tauList, kappaList, oneIndicesList, negOneIndicesList =
                         denseBin(m, xIn, nn[i].weights, nn[i].bias,
+                        nn[i].upper, nn[i].lower,
                         takeSign=takeSign, image=image, preCut=preCut,
-                        cuts=cuts, layer=nnLen - i)
+                        cuts=cuts, layer=nnLen - i, forward=forward)
             nn[i].tauList = tauList
             nn[i].kappaList = kappaList
             nn[i].oneIndicesList = oneIndicesList

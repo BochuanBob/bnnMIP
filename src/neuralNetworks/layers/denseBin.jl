@@ -1,16 +1,17 @@
 export denseBin, addDenseBinCons!
 
 const CUTOFF_DENSE_BIN = 100
-const CUTOFF_DENSE_BIN_PRECUT = 5
+const CUTOFF_DENSE_BIN_PRECUT = 10
 const NONZERO_MAX_DENSE_BIN = 1000
 const EXTEND_CUTOFF_DENSE_BIN = 10
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
 function denseBin(m::JuMP.Model, x::VarOrAff,
-               weights::Array{Float64, 2}, bias::Array{Float64, 1};
+               weights::Array{Float64, 2}, bias::Array{Float64, 1},
+               upper::Array{Float64, 1}, lower::Array{Float64, 1};
                takeSign=false, image=true, preCut=true,
-               cuts=true, extend=false, layer=0)
+               cuts=true, extend=false, layer=0, forward=true)
     if (~checkWeights(weights))
         error("Each entry of weights must be -1, 0, 1.")
     end
@@ -39,8 +40,9 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
         @constraint(m, 2 .* z .- 1 .== y)
         for i in 1:yLen
             tauList[i], kappaList[i], oneIndicesList[i], negOneIndicesList[i] =
-                neuronSign(m, x, y[i], weights[i, :], bias[i],
-                        image=image, preCut=preCut, cuts=cuts, extend=extend)
+                neuronSign(m, x, y[i], weights[i, :], bias[i], upper, lower,
+                        image=image, preCut=preCut, cuts=cuts, extend=extend,
+                        forward=forward)
         end
     else
         y = @variable(m, [1:yLen],
@@ -54,12 +56,23 @@ end
 
 # A MIP formulation for a single neuron.
 function neuronSign(m::JuMP.Model, x::VarOrAff, yi::VarOrAff,
-                weightVec::Array{T, 1}, b::U;
+                weightVec::Array{T, 1}, b::U,
+                upper::Array{Float64, 1}, lower::Array{Float64, 1};
                 image=true, preCut=true, cuts=true,
-                extend=true) where{T<:Real, U<:Real}
+                extend=true, forward=true) where{T<:Real, U<:Real}
     # initNN!(m)
-    oneIndices = findall(weightVec .== 1)
-    negOneIndices = findall(weightVec .== -1)
+
+    if (forward)
+        oneIndices = findall((weightVec .== 1) .& (upper .!= lower))
+        negOneIndices = findall((weightVec .== -1) .& (upper .!= lower))
+        fixIndices = findall(upper .== lower)
+        for i in fixIndices
+            b += weightVec[i] * lower[i]
+        end
+    else
+        oneIndices = findall(weightVec .== 1)
+        negOneIndices = findall(weightVec .== -1)
+    end
     nonzeroNum = length(oneIndices) + length(negOneIndices)
 
     if (nonzeroNum == 0)
@@ -157,7 +170,8 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                         negOneIndices, tau, kappa)
 
         m.ext[:TEST_CONSTRAINTS].count += 2
-        if (2 * count1 > nonzeroNum + tau + 1)
+        # if (2 * count1 > nonzeroNum + tau + 1)
+        if (con1Val > 10^(-5))
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, tau)
             lenI1 = length(I1pos) + length(I1neg)
@@ -166,7 +180,8 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (2 * count2 > nonzeroNum - kappa + 1)
+        # if (2 * count2 > nonzeroNum - kappa + 1)
+        if (con2Val > 10^(-5))
             I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, kappa)
             lenI2 = length(I2pos) + length(I2neg)

@@ -4,7 +4,7 @@ export perturbationVerify
 function perturbationVerify(m::JuMP.Model, nn::Array{NNLayer, 1}, input::Array,
                         trueIndex::Int64, targetIndex::Int64,
                         epsilon::Float64; cuts=true, image=true,
-                        integer=false, preCut=false)
+                        integer=false, preCut=false, forward=true)
     # Don't want to change the original data.
     nnCopy = deepcopy(nn)
     inputSize = nn[1].inputSize
@@ -36,7 +36,8 @@ function perturbationVerify(m::JuMP.Model, nn::Array{NNLayer, 1}, input::Array,
     end
     @constraint(m, x .<= input .+ epsilon)
     @constraint(m, x .>= input .- epsilon)
-    y, nnCopy = getBNNoutput(m, nnCopy, x, cuts=cuts, image=image, preCut=preCut)
+    y, nnCopy = getBNNoutput(m, nnCopy, x, cuts=cuts, image=image,
+                    preCut=preCut, forward=forward)
     @objective(m, Min, y[trueIndex] - y[targetIndex])
     return x, xInt, y, nnCopy
 end

@@ -53,6 +53,8 @@ function getNNLayerArray(nn)
             nnOut[i] = DenseBinLayer()
             nnOut[i].weights = nn[i]["weights"]
             nnOut[i].bias = nn[i]["bias"]
+            nnOut[i].upper = ones(size(nnOut[i].weights, 2))
+            nnOut[i].lower = -ones(size(nnOut[i].weights, 2))
             if (haskey(nn[i], "activation"))
                 nnOut[i].activation = nn[i]["activation"]
             end
