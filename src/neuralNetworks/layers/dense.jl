@@ -1,9 +1,5 @@
 export dense, addDenseCons!
 
-const CUTOFF_DENSE = 10
-const CUTOFF_DENSE_PRECUT = 5
-const NONZERO_MAX_DENSE = 1000
-const EXTEND_CUTOFF_DENSE = 10
 # The MIP formulation for general dense layer
 function dense(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 2}, bias::Array{U, 1},
@@ -127,7 +123,9 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                         nonzeroIndicesList::Array{Array{Int64, 1}},
                         uNewList::Array{Array{Float64, 1}, 1},
                         lNewList::Array{Array{Float64, 1}, 1},
-                        cb_data::Gurobi.CallbackData)
+                        cb_data::Gurobi.CallbackData,
+                        useDense::Bool,
+                        consistCuts::Bool)
     yLen, xLen = length(xOut), length(xIn)
     contFlag = true
 
@@ -136,9 +134,12 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
     for i in 1:length(xOut)
         yVal[i] = my_callback_value(opt, cb_data, xOut[i])
     end
-    return yVal, contFlag
+    if (~useDense)
+        return yVal, contFlag
+    end
     for i in 1:yLen
         if (-0.99 >= yVal[i] || yVal[i] >= 0.99)
+            # No violated cuts at given input.
             continue
         end
         nonzeroIndices = nonzeroIndicesList[i]
@@ -155,11 +156,12 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
 
         con1Val, con2Val, count1, count2 =
                         decideViolationCons(xVal, yVal[i],nonzeroIndices,
-                            wVec, tau, kappa, uNew,lNew)
+                            wVec, tau, kappa, uNew,lNew, consistCuts)
         m.ext[:TEST_CONSTRAINTS].count += 2
-        if (2 * count1 > nonzeroNum + tau + 1)
+        # if (2 * count1 > nonzeroNum + tau + 1)
+        if (con1Val > 10^(-5))
             I1 = getFirstCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
-                                    uNew,lNew)
+                                    uNew,lNew, consistCuts)
             con1 = getFirstCon(xIn, xOut[i], I1,
                         nonzeroIndices, wVec, tau, uNew, lNew)
             # assertFirstCon(xVal, yVal[i], I1,
@@ -167,9 +169,10 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
             MOI.submit(m, MOI.UserCut(cb_data), con1)
             m.ext[:CUTS].count += 1
         end
-        if (2 * count2 > nonzeroNum - kappa + 1)
+        # if (2 * count2 > nonzeroNum - kappa + 1)
+        if (con2Val > 10^(-5))
             I2 = getSecondCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
-                                    uNew,lNew)
+                                    uNew,lNew, consistCuts)
             con2 = getSecondCon(xIn, xOut[i], I2,
                         nonzeroIndices, wVec, kappa, uNew, lNew)
             # assertSecondCon(xVal, yVal[i], I2,
@@ -198,15 +201,16 @@ end
 function decideViolationCons(xVal::Array{Float64, 1}, yVal::Float64,
                         nonzeroIndices::Array{Int64, 1},
                         w::Array{Float64, 1}, tau::Float64, kappa::Float64,
-                        upper::Array{Float64, 1}, lower::Array{Float64, 1}
-                        )
+                        upper::Array{Float64, 1}, lower::Array{Float64, 1},
+                        consistCuts::Bool)
     # Initially, I = []
     count1, count2 = 0, 0
     con1Val = 2 * (sum(w[i] * upper[i] for i in nonzeroIndices) + tau) -
                 (sum(w[i] * upper[i] for i in nonzeroIndices) + tau) * (1 - yVal)
     con2Val = - (sum(w[i] * lower[i] for i in nonzeroIndices) + kappa) * (1 - yVal)
     for i in nonzeroIndices
-        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+        if (consistCuts && xVal[i]<= upper[i] - 10^(-8)
+                && xVal[i] >= lower[i] + 10^(-8))
             continue
         end
         con1Delta = 2*w[i]*(xVal[i] - upper[i]) - w[i]*(lower[i]-upper[i])*(1-yVal)
@@ -227,13 +231,14 @@ end
 function getFirstCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         nonzeroIndices::Array{Int64, 1},
                         w::Array{Float64, 1},
-                        upper::Array{Float64, 1}, lower::Array{Float64, 1}
-                        )
+                        upper::Array{Float64, 1}, lower::Array{Float64, 1},
+                        consistCuts::Bool)
     nonzeroNum = length(nonzeroIndices)
     I1 = Array{Int64, 1}(undef, nonzeroNum)
     count = 0
     for i in nonzeroIndices
-        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+        if (consistCuts && xVal[i]<= upper[i] - 10^(-8)
+                && xVal[i] >= lower[i] + 10^(-8))
             continue
         end
         if (2*w[i]*(xVal[i] - upper[i]) < w[i]*(lower[i]-upper[i])*(1-yVal))
@@ -249,13 +254,14 @@ end
 function getSecondCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         nonzeroIndices::Array{Int64, 1},
                         w::Array{Float64, 1},
-                        upper::Array{Float64, 1}, lower::Array{Float64, 1}
-                        )
+                        upper::Array{Float64, 1}, lower::Array{Float64, 1},
+                        consistCuts::Bool)
     nonzeroNum = length(nonzeroIndices)
     I2 = Array{Int64, 1}(undef, nonzeroNum)
     count = 0
     for i in nonzeroIndices
-        if (xVal[i]<= upper[i] - 10^(-8) && xVal[i] >= lower[i] + 10^(-8))
+        if (consistCuts && xVal[i]<= upper[i] - 10^(-8)
+                && xVal[i] >= lower[i] + 10^(-8))
             continue
         end
         if (2*w[i]*(upper[i]-xVal[i]) < w[i]*(upper[i]-lower[i])*(1-yVal))

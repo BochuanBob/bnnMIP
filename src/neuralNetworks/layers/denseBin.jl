@@ -1,9 +1,5 @@
 export denseBin, addDenseBinCons!
 
-const CUTOFF_DENSE_BIN = 100
-const CUTOFF_DENSE_BIN_PRECUT = 10
-const NONZERO_MAX_DENSE_BIN = 1000
-const EXTEND_CUTOFF_DENSE_BIN = 10
 # A fully connected layer with sign() or
 # without activation function.
 # Each entry of weights must be -1, 0, 1.
@@ -142,16 +138,17 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                         kappaList::Array{Float64, 1},
                         oneIndicesList::Array{Array{Int64, 1}, 1},
                         negOneIndicesList::Array{Array{Int64, 1}, 1},
-                        cb_data::Gurobi.CallbackData)
+                        cb_data::Gurobi.CallbackData,
+                        consistCuts::Bool)
     yLen, xLen = length(xOut), length(xIn)
     contFlag = true
     yVal = zeros(yLen)
     for i in 1:length(xOut)
         yVal[i] = my_callback_value(opt, cb_data, xOut[i])
     end
-    # return yVal, contFlag
     for i in 1:yLen
         if (-1 + 10^(-8) >= yVal[i] || yVal[i] >= 1 - 10^(-8))
+            # No violated cuts at given input.
             continue
         end
         oneIndices = oneIndicesList[i]
@@ -167,13 +164,13 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
 
         con1Val, con2Val, count1, count2 =
                     decideViolationConsBin(xVal, yVal[i], oneIndices,
-                        negOneIndices, tau, kappa)
+                        negOneIndices, tau, kappa, consistCuts)
 
         m.ext[:TEST_CONSTRAINTS].count += 2
         # if (2 * count1 > nonzeroNum + tau + 1)
         if (con1Val > 10^(-5))
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
-                            oneIndices,negOneIndices, tau)
+                            oneIndices,negOneIndices, tau, consistCuts)
             lenI1 = length(I1pos) + length(I1neg)
             con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
             # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
@@ -183,7 +180,7 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
         # if (2 * count2 > nonzeroNum - kappa + 1)
         if (con2Val > 10^(-5))
             I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
-                            oneIndices,negOneIndices, kappa)
+                            oneIndices,negOneIndices, kappa, consistCuts)
             lenI2 = length(I2pos) + length(I2neg)
             con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
             # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
@@ -197,7 +194,7 @@ end
 function decideViolationConsBin(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
                         negOneIndices::Array{Int64, 1},
-                        tau::Float64, kappa::Float64)
+                        tau::Float64, kappa::Float64, consistCuts::Bool)
     nonzeroNum = length(oneIndices) + length(negOneIndices)
     count1 = 0
     count2 = 0
@@ -205,7 +202,7 @@ function decideViolationConsBin(xVal::Array{Float64, 1}, yVal::Float64,
     con1Val = (nonzeroNum + tau) * (1+yVal) / 2
     con2Val = (kappa - nonzeroNum) * (1-yVal) / 2
     for i in oneIndices
-        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+        if (consistCuts && xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
             continue
         end
         delta = xVal[i] - yVal
@@ -218,7 +215,7 @@ function decideViolationConsBin(xVal::Array{Float64, 1}, yVal::Float64,
         end
     end
     for i in negOneIndices
-        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+        if (consistCuts && xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
             continue
         end
         delta = -xVal[i] - yVal
@@ -236,13 +233,14 @@ end
 # Output positive and negative I^1 for the first constraint in Proposition 3.
 function getFirstBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
-                        negOneIndices::Array{Int64, 1}, tau::Float64)
+                        negOneIndices::Array{Int64, 1}, tau::Float64,
+                        consistCuts::Bool)
     I1pos = Array{Int64, 1}(undef, length(oneIndices))
     I1neg = Array{Int64, 1}(undef, length(negOneIndices))
     count1 = 0
     count2 = 0
     for i in oneIndices
-        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+        if (consistCuts && xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
             continue
         end
         if (xVal[i] < yVal)
@@ -251,7 +249,7 @@ function getFirstBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
         end
     end
     for i in negOneIndices
-        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+        if (consistCuts && xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
             continue
         end
         if (-xVal[i] < yVal)
@@ -279,13 +277,14 @@ end
 # Output positive and negative I^2 for the second constraint in Proposition 3.
 function getSecondBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
                         oneIndices::Array{Int64, 1},
-                        negOneIndices::Array{Int64, 1}, kappa::Float64)
+                        negOneIndices::Array{Int64, 1}, kappa::Float64,
+                        consistCuts::Bool)
     I2pos = Array{Int64, 1}(undef, length(oneIndices))
     I2neg = Array{Int64, 1}(undef, length(negOneIndices))
     count1 = 0
     count2 = 0
     for i in oneIndices
-        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+        if (consistCuts && xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
             continue
         end
         if (xVal[i] > yVal)
@@ -294,7 +293,7 @@ function getSecondBinCutIndices(xVal::Array{Float64, 1}, yVal::Float64,
         end
     end
     for i in negOneIndices
-        if (xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
+        if (consistCuts && xVal[i] < 1 - 10^(-8) && xVal[i] > -1 + 10^(-8))
             continue
         end
         if (-xVal[i] > yVal)

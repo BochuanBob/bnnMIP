@@ -33,102 +33,35 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 200
+timeLimit = 150
+
+methodList = ["UserCutsCover"]
+
+para = bnnMIPparameters()
 
 for epsilon in epsilonList
-    for method in ["UserCutsCoverForward", "UserCutsCover"]
+    for method in methodList
         for i in 3:3
-            cuts = false
-            preCut = false
-            forward = false
-            if (method == "NoCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
-                                TimeLimit=timeLimit, Threads=4))
-            elseif (method == "DefaultCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
-                                TimeLimit=timeLimit, Threads=4))
-            elseif (method == "CoverCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0, CoverCuts=1,
-                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
-            elseif (method == "AllCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
-                                Cuts=1, TimeLimit=timeLimit, Threads=4))
-                cuts = true
-            elseif (method == "UserCuts")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
-                cuts = true
-            elseif (method == "UserCutsCover")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit, PreCrush=1, Threads=4,
-                                CoverCuts=1))
-                cuts = true
-                #, GUBCoverCuts=1, FlowCoverCuts=1
-            elseif (method == "NoCutsForward")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
-                                TimeLimit=timeLimit, Threads=4))
-                forward = true
-            elseif (method == "CoverCutsForward")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0, CoverCuts=1,
-                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
-                forward = true
-            elseif (method == "DefaultCutsForward")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
-                                TimeLimit=timeLimit, Threads=4))
-                forward = true
-            elseif (method == "AllCutsForward")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
-                                Cuts=1, TimeLimit=timeLimit, Threads=4))
-                cuts = true
-                forward = true
-            elseif (method == "UserCutsForward")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit, PreCrush=1, Threads=4))
-                cuts = true
-                forward = true
-            elseif (method == "UserCutsCoverForward")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, Cuts=0,
-                                TimeLimit=timeLimit, PreCrush=1, Threads=4,
-                                CoverCuts=1))
-                cuts = true
-                forward = true
-            elseif (method == "PreCut")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
-                                TimeLimit=timeLimit, Threads=4))
-                preCut = true
-            elseif (method == "PreCutDefault")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
-                                TimeLimit=timeLimit, Threads=4))
-                preCut = true
-            elseif (method == "PreCutAll")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=1,
-                                TimeLimit=timeLimit, Threads=4))
-                preCut = true
-                cuts = true
-            elseif (method == "PreCutUser")
-                m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1, Cuts=0,
-                                TimeLimit=timeLimit, Threads=4))
-                preCut = true
-                cuts = true
-            end
-
+            methodObj = eval(Meta.parse(method * "()"))
+            m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
+                            Cuts=methodObj.allCuts,
+                            CoverCuts=methodObj.coverCuts,
+                            TimeLimit=timeLimit, Threads=4))
             input=testImages[sampleIndex[i],:,:,:]
             trueIndex=trueIndices[i]
             targetIndex=targetIndices[i]
             x, xInt, y, nnCopy = perturbationVerify(m, nn, input, trueIndex,
-                                    targetIndex, epsilon, cuts=cuts,
-                                    image=true, preCut=preCut, forward=forward)
+                                    targetIndex, epsilon, para=para,
+                                    cuts=methodObj.userCuts,
+                                    preCut=methodObj.preCuts,
+                                    forward=methodObj.forward)
             println("Method: ", method)
             println("Epsilon: ", epsilon)
-            # @code_warntype nnCopy[1].xOut
-            # # @code_warntype nnCopy
-            # @code_warntype nnCopy[2].nonzeroIndicesList
-            # return
             optimize!(m)
             println("Sample index: ", sampleIndex[i])
             println("True index: ", trueIndex)
             println("Target index: ", targetIndex)
-            println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
+            println("L-infinity norm: ", sum(abs.(value.(x) - input)) / length(x) )
             println("Greater than 1: ", findall(value.(x) .> 1))
             println("Less than 0: ", findall(value.(x) .< 0))
             println("Expected Output Based on Input: ",

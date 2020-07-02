@@ -1,8 +1,5 @@
 export conv2dSign
 
-const CUTOFF_CONV2D = 100
-const CUTOFF_CONV2D_PRECUT = 5
-
 # The MIP formulation for general conv2d layer
 function conv2dSign(m::JuMP.Model, x::VarOrAff,
                weights::Array{T, 4}, bias::Array{U, 1},

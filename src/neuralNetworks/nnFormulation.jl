@@ -7,8 +7,9 @@ export getBNNoutput
 # If cuts == false, it is a Big-M formulation.
 # Otherwise, cuts for the ideal formulation are added to the model.
 function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
-            x::Array{JuMP.VariableRef}; cuts=true,
-            image=true, preCut=true, forward=true)
+            x::Array{JuMP.VariableRef}, para::bnnMIPparameters; cuts=true,
+            preCut=true, forward=true)
+    image = para.image
     initNN!(m)
     count = m.ext[:NN].count
     m.ext[:NN].count += 1
@@ -118,9 +119,13 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
     # Whether submit the cuts to Gurobi.
     if (cuts)
         opt = backend(m)::Gurobi.Optimizer
+        useDense = para.useDense
+        consistDense = para.consistDense
+        consistDenseBin = para.consistDenseBin
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            callbackFunc(m, opt, cb_data, nn)
+            callbackFunc(m, opt, cb_data, nn, useDense,
+                            consistDense, consistDenseBin)
         end
         MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     else

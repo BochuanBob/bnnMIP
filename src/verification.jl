@@ -3,9 +3,11 @@ export perturbationVerify
 # Minimize the difference of outputs between true index and target index.
 function perturbationVerify(m::JuMP.Model, nn::Array{NNLayer, 1}, input::Array,
                         trueIndex::Int64, targetIndex::Int64,
-                        epsilon::Float64; cuts=true, image=true,
-                        integer=false, preCut=false, forward=true)
+                        epsilon::Float64; para=bnnMIPparameters(),
+                        cuts=true, preCut=false, forward=true)
     # Don't want to change the original data.
+    integer = para.integer
+    image = para.image
     nnCopy = deepcopy(nn)
     inputSize = nn[1].inputSize
     x = Array{VariableRef}(undef, inputSize)
@@ -36,7 +38,7 @@ function perturbationVerify(m::JuMP.Model, nn::Array{NNLayer, 1}, input::Array,
     end
     @constraint(m, x .<= input .+ epsilon)
     @constraint(m, x .>= input .- epsilon)
-    y, nnCopy = getBNNoutput(m, nnCopy, x, cuts=cuts, image=image,
+    y, nnCopy = getBNNoutput(m, nnCopy, x, para, cuts=cuts,
                     preCut=preCut, forward=forward)
     @objective(m, Min, y[trueIndex] - y[targetIndex])
     return x, xInt, y, nnCopy

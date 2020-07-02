@@ -1,8 +1,5 @@
 export conv2dBinSign
 
-const CUTOFF_CONV2D_BIN = 100
-const CUTOFF_CONV2D_BIN_PRECUT = 5
-
 # A conv2d layer with sign().
 # Each entry of weights must be -1, 0, 1.
 function conv2dBinSign(m::JuMP.Model, x::VarOrAff,
