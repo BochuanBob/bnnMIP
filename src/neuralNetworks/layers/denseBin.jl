@@ -34,6 +34,13 @@ function denseBin(m::JuMP.Model, x::VarOrAff,
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
         @constraint(m, 2 .* z .- 1 .== y)
+        if (forward)
+            for i in 1:xLen
+                if (upper[i] == lower[i])
+                    @constraint(m, x[i] == lower[i])
+                end
+            end
+        end
         for i in 1:yLen
             tauList[i], kappaList[i], oneIndicesList[i], negOneIndicesList[i] =
                 neuronSign(m, x, y[i], weights[i, :], bias[i], upper, lower,
