@@ -37,113 +37,26 @@ module bnnMIP
         bnnMIPparameters() = new(false, true, false, false, true, true)
     end
 
-    struct NoCuts
+    struct Method
         userCuts::Bool
         preCuts::Bool
         forward::Bool
         coverCuts::Int64
         allCuts::Int64
-        NoCuts() = new(false, false, false, 0, 0)
     end
 
-    struct DefaultCuts
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        DefaultCuts() = new(false, false, false, 1, 1)
-    end
-
-    struct UserCuts
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        UserCuts() = new(true, false, false, 0, 0)
-    end
-
-    struct UserCutsCover
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        UserCutsCover() = new(true, false, false, 1, 0)
-    end
-
-    struct CoverCuts
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        CoverCuts() = new(false, false, false, 1, 0)
-    end
-
-    struct AllCuts
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        AllCuts() = new(true, false, true, 1, 1)
-    end
-
-    struct NoCutsForward
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        NoCutsForward() = new(false, false, true, 0, 0)
-    end
-
-    struct DefaultCutsForward
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        DefaultCutsForward() = new(false, false, true, 1, 1)
-    end
-
-    struct UserCutsForward
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        UserCutsForward() = new(true, false, true, 0, 0)
-    end
-
-    struct UserCutsCoverForward
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        UserCutsCoverForward() = new(true, false, true, 1, 0)
-    end
-
-    struct CoverCutsForward
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        CoverCutsForward() = new(false, false, true, 1, 0)
-    end
-
-    struct AllCutsForward
-        userCuts::Bool
-        preCuts::Bool
-        forward::Bool
-        coverCuts::Int64
-        allCuts::Int64
-        AllCutsForward() = new(true, false, true, 1, 1)
-    end
+    const NoCuts = Method(false, false, false, 0, 0)
+    const DefaultCuts = Method(false, false, false, 1, 1)
+    const UserCuts = Method(true, false, false, 0, 0)
+    const UserCutsCover = Method(true, false, false, 1, 0)
+    const CoverCuts = Method(false, false, false, 1, 0)
+    const AllCuts = Method(true, false, true, 1, 1)
+    const NoCutsForward = Method(false, false, true, 0, 0)
+    const DefaultCutsForward = Method(false, false, true, 1, 1)
+    const UserCutsForward = Method(true, false, true, 0, 0)
+    const UserCutsCoverForward = Method(true, false, true, 1, 0)
+    const CoverCutsForward = Method(false, false, true, 1, 0)
+    const AllCutsForward = Method(true, false, true, 1, 1)
 
     include("neuralNetworks.jl")
     include("utilities.jl")

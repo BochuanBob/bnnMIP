@@ -10,12 +10,12 @@ using JuMP, Gurobi, bnnMIP
 
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn2F500Sparse.mat", "nn")
+nn = readNN("../data/nn5F100Sparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 20
-epsilonList = [0.08]
+epsilonList = [0.01]
 
 Random.seed!(2020)
 sampleIndex = rand(1:length(testLabels), num)
@@ -50,11 +50,12 @@ InstanceOut = zeros(totalLen)
 
 count = [1]
 para = bnnMIPparameters()
+para.consistDenseBin = false
 
 for epsilon in epsilonList
     for method in methodList
         for i in 1:num
-            methodObj = eval(Meta.parse(method * "()"))
+            methodObj = eval(Meta.parse("bnnMIP." * method))
             m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
                             Cuts=methodObj.allCuts,
                             CoverCuts=methodObj.coverCuts,

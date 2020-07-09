@@ -10,14 +10,14 @@ using JuMP, Gurobi, bnnMIP
 
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn2F500Sparse.mat", "nn")
+nn = readNN("../data/nn5F100Sparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
 num = 20
-epsilonList = [0.08]
+epsilonList = [1/255]
 
-for i in 2:4
+for i in 2:(length(nn)-1)
     println("Layer ", i, " zero ratios: ", sum(nn[i].weights .== 0) / length(nn[i].weights))
 end
 
@@ -33,16 +33,22 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 150
+timeLimit = 5
 
-methodList = ["UserCutsCover"]
+# NoCuts, DefaultCuts, UserCuts, UserCutsCover, CoverCuts, AllCuts,
+#         NoCutsForward, DefaultCutsForward, UserCutsForward,
+#         UserCutsCoverForward, CoverCutsForward, AllCutsForward
+methodList = ["UserCutsForward"]
+
+
 
 para = bnnMIPparameters()
-
+para.useDense = false
+para.consistDenseBin = true
 for epsilon in epsilonList
     for method in methodList
-        for i in 3:3
-            methodObj = eval(Meta.parse(method * "()"))
+        for i in 1:1
+            methodObj = eval(Meta.parse("bnnMIP." * method))
             m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
                             Cuts=methodObj.allCuts,
                             CoverCuts=methodObj.coverCuts,
