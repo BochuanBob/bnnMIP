@@ -34,7 +34,8 @@ module bnnMIP
         useConv2d::Bool
         consistDense::Bool
         consistDenseBin::Bool
-        bnnMIPparameters() = new(false, true, false, false, true, true)
+        switchCuts::Bool
+        bnnMIPparameters() = new(false, true, false, false, true, true, false)
     end
 
     struct Method
