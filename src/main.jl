@@ -10,11 +10,11 @@ using JuMP, Gurobi, bnnMIP
 
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn5F100Sparse.mat", "nn")
+nn = readNN("../data/nn5F200Sparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
-num = 20
+num = 10
 epsilonList = [0.01]
 
 Random.seed!(2020)
@@ -25,9 +25,7 @@ for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
 timeLimit = 1800
-methodList = ["NoCuts", "UserCuts", "CoverCuts",
-                "DefaultCuts", "AllCuts", "UserCutsCover",
-                "NoCutsForward", "UserCutsForward", "CoverCutsForward",
+methodList = ["NoCutsForward", "UserCutsForward", "CoverCutsForward",
                 "DefaultCutsForward", "AllCutsForward", "UserCutsCoverForward"]
 
 # Ouputs
@@ -50,16 +48,19 @@ InstanceOut = zeros(totalLen)
 
 count = [1]
 para = bnnMIPparameters()
+para.useDense = true
 para.consistDenseBin = false
+para.consistDense = false
+para.switchCuts = true
 
 for epsilon in epsilonList
-    for method in methodList
-        for i in 1:num
+    for i in 1:num
+        for method in methodList
             methodObj = eval(Meta.parse("bnnMIP." * method))
             m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
                             Cuts=methodObj.allCuts,
                             CoverCuts=methodObj.coverCuts,
-                            TimeLimit=timeLimit, Threads=4))
+                            TimeLimit=timeLimit, Threads=4, NodeLimit=1))
             input=testImages[sampleIndex[i],:,:,:]
             trueIndex=trueIndices[i]
             targetIndex=targetIndices[i]
@@ -71,10 +72,10 @@ for epsilon in epsilonList
             println("Method: ", method)
             println("Epsilon: ", epsilon)
             optimize!(m)
-            println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
-            println("Expected Output Based on Input: ",
-                forwardProp(value.(x), nn))
-            println("Output: ", value.(y))
+            # println("L-infinity norm: ", maximum(abs.(value.(x) - input) ))
+            # println("Expected Output Based on Input: ",
+            #     forwardProp(value.(x), nn))
+            # println("Output: ", value.(y))
 
             InstanceOut[count[1]] = i
             sampleIndexList[count[1]] = sampleIndex[i]
@@ -102,4 +103,4 @@ df = DataFrame(Instance=InstanceOut, Samples=sampleIndexList,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
             IterCount=itersOut, callbackTimes=callbackOut,
             submittedCuts=userCutsOut)
-CSV.write("results2F500Ep008All.csv", df)
+CSV.write("results5F200Ep001AllUser.csv", df)

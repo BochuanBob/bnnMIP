@@ -10,12 +10,13 @@ using JuMP, Gurobi, bnnMIP
 
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn5F100Sparse.mat", "nn")
+nn = readNN("../data/nn5F200Sparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
-num = 20
-epsilonList = [1/255]
+num = 5
+epsilonList = [0.01]
+
 
 for i in 2:(length(nn)-1)
     println("Layer ", i, " zero ratios: ", sum(nn[i].weights .== 0) / length(nn[i].weights))
@@ -33,7 +34,7 @@ targetIndices = Array{Int64, 1}(zeros(num))
 for i in 1:num
     targetIndices[i] = rand(setdiff(1:10, trueIndices[i]), 1)[1]
 end
-timeLimit = 5
+timeLimit = 20
 
 # NoCuts, DefaultCuts, UserCuts, UserCutsCover, CoverCuts, AllCuts,
 #         NoCutsForward, DefaultCutsForward, UserCutsForward,
@@ -43,11 +44,16 @@ methodList = ["UserCutsForward"]
 
 
 para = bnnMIPparameters()
-para.useDense = false
-para.consistDenseBin = true
+para.useDense = true
+para.consistDenseBin = false
+para.consistDense = false
+para.switchCuts = true
 for epsilon in epsilonList
-    for method in methodList
-        for i in 1:1
+    for i in 2:2
+        println("-" ^ (length("Instance: ") + 2))
+        println("Instance: ", i)
+        println("-" ^ (length("Instance: ") + 2))
+        for method in methodList
             methodObj = eval(Meta.parse("bnnMIP." * method))
             m = direct_model(Gurobi.Optimizer(OutputFlag=1, PreCrush=1,
                             Cuts=methodObj.allCuts,
@@ -67,7 +73,8 @@ for epsilon in epsilonList
             println("Sample index: ", sampleIndex[i])
             println("True index: ", trueIndex)
             println("Target index: ", targetIndex)
-            println("L-infinity norm: ", sum(abs.(value.(x) - input)) / length(x) )
+            println("L-1 norm: ", sum(abs.(value.(x) - input)) / length(x) )
+            println("L-infinity norm: ", maximum(abs.(value.(x) - input)) )
             println("Greater than 1: ", findall(value.(x) .> 1))
             println("Less than 0: ", findall(value.(x) .< 0))
             println("Expected Output Based on Input: ",
