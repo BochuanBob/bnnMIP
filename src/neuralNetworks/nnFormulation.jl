@@ -126,7 +126,7 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
 
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
-            nodeNum = MOI.get(m, Gurobi.ModelAttribute("NodeCount"))
+            nodeNum = Gurobi.cbget(Float64, cb_data, Cint(Gurobi.CB_MIPNODE), 3002)
             switch = ((nodeNum > 1) && switchCuts)
             callbackFunc(m, opt, cb_data, nn, useDense,
                             xor(consistDense, switch), xor(consistDenseBin, switch))
