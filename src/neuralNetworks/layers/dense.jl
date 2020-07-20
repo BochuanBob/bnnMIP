@@ -125,7 +125,8 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                         lNewList::Array{Array{Float64, 1}, 1},
                         cb_data::Gurobi.CallbackData,
                         useDense::Bool,
-                        consistCuts::Bool)
+                        consistCuts::Bool,
+                        Kval::Int64)
     yLen, xLen = length(xOut), length(xIn)
     contFlag = true
 
@@ -162,6 +163,14 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
         if (con1Val > 10^(-5))
             I1 = getFirstCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew, consistCuts)
+            if (Kval >= 1)
+                IsetList = genKCuts(I1, Kval)
+                for Iset in IsetList
+                    con = getFirstCon(xIn, xOut[i], Iset,
+                                nonzeroIndices, wVec, tau, uNew, lNew)
+                    MOI.submit(m, MOI.UserCut(cb_data), con)
+                end
+            end
             con1 = getFirstCon(xIn, xOut[i], I1,
                         nonzeroIndices, wVec, tau, uNew, lNew)
             # assertFirstCon(xVal, yVal[i], I1,
@@ -173,6 +182,14 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
         if (con2Val > 10^(-5))
             I2 = getSecondCutIndices(xVal, yVal[i],nonzeroIndices,wVec,
                                     uNew,lNew, consistCuts)
+            if (Kval >= 1)
+                IsetList = genKCuts(I2, Kval)
+                for Iset in IsetList
+                    con = getSecondCon(xIn, xOut[i], Iset,
+                                nonzeroIndices, wVec, kappa, uNew, lNew)
+                    MOI.submit(m, MOI.UserCut(cb_data), con)
+                end
+            end
             con2 = getSecondCon(xIn, xOut[i], I2,
                         nonzeroIndices, wVec, kappa, uNew, lNew)
             # assertSecondCon(xVal, yVal[i], I2,
@@ -183,6 +200,16 @@ function addDenseCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
     end
 
     return yVal, contFlag
+end
+
+function genKCuts(Iset::Array{Int64, 1}, Kval::Int64)
+    arrLen = min(Kval, length(Iset))
+    diffIndices = rand(Iset, arrLen)
+    IsetList = Array{Array{Int64, 1}, 1}(undef, arrLen)
+    for i in 1:arrLen
+        IsetList[i] = setdiff(Iset, diffIndices[i])
+    end
+    return IsetList
 end
 
 

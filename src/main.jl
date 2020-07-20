@@ -10,12 +10,12 @@ using JuMP, Gurobi, bnnMIP
 
 include("../test/testFunc.jl")
 # Inputs
-nn = readNN("../data/nn5F200Sparse.mat", "nn")
+nn = readNN("../data/nn2F500Sparse.mat", "nn")
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
 testLabels = Array{Int64, 1}(testLabels[:]) .+ 1
-num = 10
-epsilonList = [0.01]
+num = 20
+epsilonList = [0.1]
 
 Random.seed!(2020)
 sampleIndex = rand(1:length(testLabels), num)
@@ -52,6 +52,7 @@ para.useDense = true
 para.consistDenseBin = false
 para.consistDense = false
 para.switchCuts = true
+para.K = 5
 
 for epsilon in epsilonList
     for i in 1:num
@@ -103,4 +104,4 @@ df = DataFrame(Instance=InstanceOut, Samples=sampleIndexList,
             Bounds=boundsOut, NodeCount=nodesOut, NumConstrs=consOut,
             IterCount=itersOut, callbackTimes=callbackOut,
             submittedCuts=userCutsOut)
-CSV.write("results5F200Ep001AllUser.csv", df)
+CSV.write("results2F500Ep01K5.csv", df)

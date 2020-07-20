@@ -123,13 +123,14 @@ function getBNNoutput(m::JuMP.Model, nn::Array{NNLayer, 1},
         consistDense = para.consistDense
         consistDenseBin = para.consistDenseBin
         switchCuts = para.switchCuts
+        Kval = para.K
 
         # Generate cuts by callback function
         function callbackCutsBNN(cb_data)
             nodeNum = Gurobi.cbget(Float64, cb_data, Cint(Gurobi.CB_MIPNODE), 3002)
             switch = ((nodeNum > 1) && switchCuts)
             callbackFunc(m, opt, cb_data, nn, useDense,
-                            xor(consistDense, switch), xor(consistDenseBin, switch))
+                            xor(consistDense, switch), xor(consistDenseBin, switch), Kval)
         end
         MOI.set(m, MOI.UserCutCallback(), callbackCutsBNN)
     else

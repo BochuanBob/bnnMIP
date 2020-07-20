@@ -2,18 +2,20 @@ module bnnMIP
     import JuMP, Gurobi
     import MAT
     import Combinatorics, IterTools
+    import Random
 
     using JuMP, Gurobi
     using MAT
+    using Random
     using Combinatorics, IterTools
     const CUTOFF_DENSE_BIN = 100 # Not Used in Code
     const CUTOFF_DENSE_BIN_PRECUT = 10
-    const NONZERO_MAX_DENSE_BIN = 1000
+    const NONZERO_MAX_DENSE_BIN = 50
     const EXTEND_CUTOFF_DENSE_BIN = 10
 
     const CUTOFF_DENSE = 10 # Not Used in Code
     const CUTOFF_DENSE_PRECUT = 5
-    const NONZERO_MAX_DENSE = 1000
+    const NONZERO_MAX_DENSE = 50
     const EXTEND_CUTOFF_DENSE = 10
 
     const CUTOFF_CONV2D = 100
@@ -35,7 +37,8 @@ module bnnMIP
         consistDense::Bool
         consistDenseBin::Bool
         switchCuts::Bool
-        bnnMIPparameters() = new(false, true, false, false, true, true, false)
+        K::Int64
+        bnnMIPparameters() = new(false, true, false, false, true, true, false, 0)
     end
 
     struct Method

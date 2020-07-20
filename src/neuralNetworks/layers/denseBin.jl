@@ -146,7 +146,8 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
                         oneIndicesList::Array{Array{Int64, 1}, 1},
                         negOneIndicesList::Array{Array{Int64, 1}, 1},
                         cb_data::Gurobi.CallbackData,
-                        consistCuts::Bool)
+                        consistCuts::Bool,
+                        Kval::Int64)
     yLen, xLen = length(xOut), length(xIn)
     contFlag = true
     yVal = zeros(yLen)
@@ -179,6 +180,17 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
             I1pos, I1neg = getFirstBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, tau, consistCuts)
             lenI1 = length(I1pos) + length(I1neg)
+            if (Kval >= 1)
+                IsetPosList, IsetNegList = genKCuts(I1pos, I1neg, Kval)
+                setLen = length(IsetPosList)
+                for j in 1:setLen
+                    IsetPos = IsetPosList[j]
+                    IsetNeg = IsetNegList[j]
+                    con = getFirstBinCon(xIn,xOut[i],IsetPos,IsetNeg,lenI1-1,
+                            nonzeroNum,tau)
+                    MOI.submit(m, MOI.UserCut(cb_data), con)
+                end
+            end
             con1 = getFirstBinCon(xIn,xOut[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
             # assertFirstBinCon(xVal,yVal[i],I1pos,I1neg,lenI1,nonzeroNum,tau)
             MOI.submit(m, MOI.UserCut(cb_data), con1)
@@ -189,6 +201,17 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
             I2pos, I2neg = getSecondBinCutIndices(xVal, yVal[i],
                             oneIndices,negOneIndices, kappa, consistCuts)
             lenI2 = length(I2pos) + length(I2neg)
+            if (Kval >= 1)
+                IsetPosList, IsetNegList = genKCuts(I2pos, I2neg, Kval)
+                setLen = length(IsetPosList)
+                for j in 1:setLen
+                    IsetPos = IsetPosList[j]
+                    IsetNeg = IsetNegList[j]
+                    con = getSecondBinCon(xIn,xOut[i],IsetPos,IsetNeg,lenI2-1,
+                                    nonzeroNum,kappa)
+                    MOI.submit(m, MOI.UserCut(cb_data), con)
+                end
+            end
             con2 = getSecondBinCon(xIn,xOut[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
             # assertSecondBinCon(xVal,yVal[i],I2pos,I2neg,lenI2,nonzeroNum,kappa)
             MOI.submit(m, MOI.UserCut(cb_data), con2)
@@ -196,6 +219,19 @@ function addDenseBinCons!(m::JuMP.Model, opt::Gurobi.Optimizer,
         end
     end
     return yVal, contFlag
+end
+
+function genKCuts(Ipos::Array{Int64, 1}, Ineg::Array{Int64, 1}, Kval::Int64)
+    Iset = union(Ipos, Ineg)
+    arrLen = min(Kval, length(Iset))
+    diffIndices = rand(Iset, arrLen)
+    IsetPosList = Array{Array{Int64, 1}, 1}(undef, arrLen)
+    IsetNegList = Array{Array{Int64, 1}, 1}(undef, arrLen)
+    for i in 1:arrLen
+        IsetPosList[i] = setdiff(Ipos, diffIndices[i])
+        IsetNegList[i] = setdiff(Ineg, diffIndices[i])
+    end
+    return IsetPosList, IsetNegList
 end
 
 function decideViolationConsBin(xVal::Array{Float64, 1}, yVal::Float64,
