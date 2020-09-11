@@ -6,11 +6,14 @@ function readNN(fileName::String, nnName::String)
     file = matopen(fileName)
     nn = read(file, nnName)
     close(file)
+    print(nn[1])
     @assert haskey(nn[1], "inputSize")
     inputSize = nn[1]["inputSize"]
     N = length(inputSize)
     nn[1]["inputSize"] = NTuple{N, Int}(inputSize)
     @assert nn[1]["inputSize"] isa NTuple{N, Int} where {N}
+    nn[1]["upper"] = ones(nn[1]["inputSize"])
+    nn[1]["lower"] = zeros(nn[1]["inputSize"])
     return nn
 end
 
@@ -28,7 +31,6 @@ function readDataset(fileName::String, trainVarName::String,
     return trainVar, trainLabel, testVar, testLabel
 end
 
-export
 # Read a single variable in the .mat file.
 function readOneVar(fileName::String, varName::String)
     file = matopen(fileName)
