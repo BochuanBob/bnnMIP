@@ -45,5 +45,6 @@ function getDenseQNNoutput(m::JuMP.Model, nn,
             error("Do not support this type of layer!")
         end
     end
+    println(xCurrent)
     return xCurrent
 end

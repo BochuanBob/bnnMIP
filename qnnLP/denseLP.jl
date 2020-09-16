@@ -21,18 +21,32 @@ function denseLP(m::JuMP.Model, x::Array{VariableRef},
         upperOut[i], lowerOut[i] = calcBounds(upper, lower, weights[i, :],
                                             bias[i])
     end
-    v = weights * x .+ bias
     if (actFunc == "DoReFa")
+        v = weights * x .+ bias
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
         @constraint(m, [i=1:yLen], y[i] <= DoReFa(upperOut[i], actBits))
         @constraint(m, [i=1:yLen], y[i] >= DoReFa(lowerOut[i], actBits))
         for i in 1:yLen
-            addLPcons!(m, v[i], y[i], upperOut[i], lowerOut[i], Int64.(actBits))
+            addDoReFaLPcons!(m, v[i], y[i], upperOut[i], lowerOut[i], Int64.(actBits))
+            upperOut[i] = DoReFa(upperOut[i], actBits)
+            lowerOut[i] = DoReFa(lowerOut[i], actBits)
+        end
+    elseif (actFunc == "Sign")
+        v = weights * x .+ bias
+        y = @variable(m, [1:yLen],
+                    base_name="y_$count")
+        @constraint(m, [i=1:yLen], y[i] <= Sign(upperOut[i]))
+        @constraint(m, [i=1:yLen], y[i] >= Sign(lowerOut[i]))
+        for i in 1:yLen
+            addSignLPcons!(m, v[i], y[i], upperOut[i], lowerOut[i])
+            upperOut[i] = Sign(upperOut[i])
+            lowerOut[i] = Sign(lowerOut[i])
         end
     elseif (actFunc == "")
         y = @variable(m, [1:yLen],
                     base_name="y_$count")
+
         @constraint(m, [i=1:yLen], y[i] ==
                     bias[i] + sum(weights[i,j] * x[j] for j in 1:xLen))
     else
@@ -43,7 +57,7 @@ end
 
 function calcBounds(upper::Array{Float64, 1}, lower::Array{Float64, 1},
                     weights::Array{Float64, 1}, bias::Float64)
-    upperOut, lowerOut = 0, 0
+    upperOut, lowerOut = bias, bias
     wLen = length(weights)
     for i in 1:wLen
         if (weights[i] > 0)
@@ -54,7 +68,15 @@ function calcBounds(upper::Array{Float64, 1}, lower::Array{Float64, 1},
             lowerOut += upper[i] * weights[i]
         end
     end
-    return upperOut+bias, lowerOut+bias
+    return upperOut, lowerOut
+end
+
+function Sign(input)
+    if (input >= 0)
+        return 1
+    else
+        return -1
+    end
 end
 
 function DoReFa(input, actBits)
@@ -65,13 +87,28 @@ function DoReFa(input, actBits)
     return output
 end
 
-function addLPcons!(m::JuMP.Model, v::VarOrAff, y::VarOrAff,
+function addSignLPcons!(m::JuMP.Model, v::VarOrAff, y::VarOrAff,
+                    upper::Float64, lower::Float64)
+    if (Sign(upper) == Sign(lower))
+        return nothing
+    end
+    @constraint(m, y >= (2 / upper) * v - 1)
+    @constraint(m, y <= -(2 / lower) * v + 1)
+    return nothing
+end
+
+function addDoReFaLPcons!(m::JuMP.Model, v::VarOrAff, y::VarOrAff,
                     upper::Float64, lower::Float64, actBits::Int64)
     n = 2^actBits - 1
     qL = DoReFa(lower, actBits)
     qU = DoReFa(upper, actBits)
+    if (qL == qU)
+        return nothing
+    end
     B1 = (2 * floor(n * lower + 1/2) + 1) / (2 * n)
+    B1 = min(max(B1, 0), 1)
     B2 = (2 * floor(n * upper + 1/2) - 1) / (2 * n)
+    B2 = min(max(B2, 0), 1)
     if (upper >= (2*n+1) / (2 * n))
         @constraint(m, y >= (v - B1) * (1 - qL) / (upper - B1) + qL)
     else
