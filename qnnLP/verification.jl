@@ -4,7 +4,7 @@ export perturbationVerify
 # Minimize the difference of outputs between true index and target index.
 function perturbationVerify(m::JuMP.Model, nn, input::Array,
                         trueIndex::Int64, targetIndex::Int64,
-                        epsilon::Float64)
+                        epsilon::Float64; MIP=false)
     # Don't want to change the original data.
     inputSize = nn[1]["inputSize"]
     nnCopy = deepcopy(nn)
@@ -17,13 +17,13 @@ function perturbationVerify(m::JuMP.Model, nn, input::Array,
 
     @constraint(m, x .<= input .+ epsilon)
     @constraint(m, x .>= input .- epsilon)
-    y = getDenseQNNoutput(m, nnCopy, x)
+    y = getDenseQNNoutput(m, nnCopy, x, MIP)
     @objective(m, Min, y[trueIndex] - y[targetIndex])
     return x, y
 end
 
 function getDenseQNNoutput(m::JuMP.Model, nn,
-                    x::Array{VariableRef})
+                    x::Array{VariableRef}, MIP)
     nnLen = length(nn)
     xCurrent = x
     upper, lower = Float64.(nn[1]["upper"]), Float64.(nn[1]["lower"])
@@ -38,7 +38,7 @@ function getDenseQNNoutput(m::JuMP.Model, nn,
             xCurrent, upper, lower = denseLP(m, xCurrent, weights,
                                 bias, upper, lower,
                                 actFunc=actFunc,
-                                actBits=actBits)
+                                actBits=actBits, MIP=MIP)
         elseif nn[i]["type"] == "flatten"
             xCurrent, upper, lower = flatten(m, xCurrent, upper, lower)
         else

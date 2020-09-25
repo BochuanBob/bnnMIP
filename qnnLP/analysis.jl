@@ -1,9 +1,9 @@
 using CSV
 using StatsBase
 
-io = open("EP01summarySparse.txt", "w")
+io = open("qnnOutput/2F100EP005summarySparseAcc.txt", "w")
 
-df = CSV.read("compareSparseEP01.csv")
+df = CSV.read("qnnOutput/2F100compareSparseAccEP005.csv")
 for model in unique(df.Models)
     sub_df = df[df.Models .== model, :]
     write(io, string("Model: ", model, " Verified: ", sum(sub_df.Objs .>= 0),

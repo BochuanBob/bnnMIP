@@ -5,12 +5,20 @@ using DataFrames
 
 include("qnnLP.jl")
 
-modelList = ["nn2F500DoReFaW1A1.mat", "nn2F500DoReFaW1A2.mat", "nn2F500DoReFaW1A3.mat",
-            "nn2F500DoReFaW1A4.mat", "nn2F500DoReFaW1A5.mat", "nn2F500DoReFaW1A6.mat",
-            "nn2F500DoReFaW1A7.mat", "nn2F500DoReFaW1A8.mat"]
-modelList = ["nn2F500DoReFaW1A1Sparse.mat", "nn2F500DoReFaW1A8Sparse.mat"]
-num = 100
-epsilonList = [0.1]
+# modelList = ["nn2F500DoReFaW1A1SparseAcc.mat", "nn2F500DoReFaW1A2SparseAcc.mat", "nn2F500DoReFaW1A3SparseAcc.mat",
+#             "nn2F500DoReFaW1A4SparseAcc.mat", "nn2F500DoReFaW1A5SparseAcc.mat", "nn2F500DoReFaW1A6SparseAcc.mat",
+#             "nn2F500DoReFaW1A7SparseAcc.mat", "nn2F500DoReFaW1A8SparseAcc.mat"]
+modelList = ["nn5F100DoReFaWBinA1.mat",
+            "nn5F100DoReFaW1A1.mat", "nn5F100DoReFaW1A2.mat", "nn5F100DoReFaW1A4.mat",
+            "nn5F100DoReFaW1A8.mat", "nn5F100DoReFaW1A16.mat", "nn5F100DoReFaW1A32.mat"
+            ]
+
+modelList = ["nn2F100DoReFaWBinA1.mat", "nn2F100DoReFaW1A1.mat", "nn2F100DoReFaW1A2.mat",
+            "nn2F100DoReFaW1A4.mat", "nn2F100DoReFaW1A8.mat",
+            "nn2F100DoReFaW1A16.mat", "nn2F100DoReFaW1A32.mat"]
+# modelList = ["nn2F500DoReFaW1A64SparseAcc.mat"]
+num = 200
+epsilonList = [0.05]
 Random.seed!(2020)
 testImages = readOneVar("../data/data.mat", "test_images")
 testLabels = readOneVar("../data/data.mat", "test_labels")
@@ -88,4 +96,4 @@ df = DataFrame(Instance=InstanceOut, Samples=sampleIndexList,
             TargetIndices=targetIndexList, Models=modelsOut,
             Epsilons=epsilonOut, RunTimes=runTimeOut, Objs=objsOut,
             NumConstrs=consOut, IterCount=itersOut)
-CSV.write("compareSparseEP01.csv", df)
+CSV.write("qnnOutput/2F100compareSparseAccEP005.csv", df)
