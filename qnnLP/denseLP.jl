@@ -28,10 +28,9 @@ function denseLP(m::JuMP.Model, x::Array{VariableRef},
                 base_name="y_$count")
     if (actFunc == "DoReFa")
         if (MIP)
-            # z = @variable(m, [1:yLen, 1:(2^actBits)], base_name="z_$count")
             for i in 1:yLen
-                # addDoReFaMIPcons!(m, v[i], y[i], z[i, :], upperOut[i],
-                #                 lowerOut[i], Int64.(actBits))
+                addDoReFaMIPcons!(m, v[i], y[i], upperOut[i],
+                                lowerOut[i], Int64.(actBits))
                 upperOut[i] = DoReFa(upperOut[i], actBits)
                 lowerOut[i] = DoReFa(lowerOut[i], actBits)
             end
@@ -144,7 +143,44 @@ function addDoReFaLPcons!(m::JuMP.Model, v::VarOrAff, y::VarOrAff,
 end
 
 function addDoReFaMIPcons!(m::JuMP.Model, v::VarOrAff, y::VarOrAff,
-                    z::Array{VariableRef},
-                    upper::Float64, lower::Float64, actBits::Int64)
-    # TODO
+                    upper::Float64, lower::Float64, actBits::Int64; exact=false)
+    n = 2^actBits - 1
+    zi = @variable(m, [1:3], binary=true)
+    yi = @variable(m)
+    vi = @variable(m, [1:3])
+    @constraint(m, zi[1] + zi[2] + zi[3] == 1)
+    @constraint(m, y == yi + zi[3])
+    @constraint(m, vi[1] + vi[2] + vi[3] == v)
+
+    # Constraints for the first part.
+    if (lower < 1/(2*n))
+        @constraint(m, lower * zi[1] <= vi[1])
+        @constraint(m, vi[1] <= zi[1] / (2 * n) )
+    else
+        @constraint(m, zi[1] == 0)
+        @constraint(m, vi[1] == 0)
+    end
+
+    # Constraints for the third part.
+    if (upper > (2* n-1) / (2 * n))
+        @constraint(m, zi[3] * (2* n-1) / (2 * n) <= vi[3])
+        @constraint(m, vi[3] <= zi[3] * upper)
+    else
+        @constraint(m, zi[3] == 0)
+        @constraint(m, vi[3] == 0)
+    end
+
+    # Constraints for the middle part.
+    @constraint(m, yi - vi[2] >= -zi[2] / (2 * n))
+    @constraint(m, yi - vi[2] <= zi[2] / (2 * n))
+    u2 = min((n-1) / n, DoReFa(upper, actBits))
+    l2 = max(1/n, DoReFa(lower, actBits))
+    @constraint(m, yi <= zi[2] * u2)
+    @constraint(m, l2 * zi[2] <= yi)
+
+    if (exact)
+        u = @variable(m, integer=true)
+        @constraint(m, y == u / n)
+    end
+    return nothing
 end
